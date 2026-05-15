@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MFG Control — Dashboard de Produção</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #0f1520;
+    --surface: #141c27;
+    --border: #1e2d3d;
+    --cyan: #38bdf8;
+    --green: #34d399;
+    --orange: #fb923c;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --blue: #60a5fa;
+    --txt: #e2e8f0;
+    --txt2: #64748b;
+    --txt3: #334155;
+    --grid: rgba(56,189,248,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font-family: 'Inter', sans-serif; font-size: 13px; min-height: 100vh;
+    background-image: linear-gradient(var(--grid) 1px,transparent 1px), linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* HEADER */
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 28px; height:58px; gap:16px;
+    background:rgba(15,21,32,0.97); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:100;
+  }
+  .logo { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .logo-hex { width:32px; height:32px; background:var(--cyan); clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%); }
+  .logo-name { font-size:16px; font-weight:700; letter-spacing:.06em; }
+  .logo-sub { font-size:9px; letter-spacing:.2em; color:var(--cyan); font-family:'JetBrains Mono',monospace; }
+  .hdr-r { display:flex; align-items:center; gap:12px; margin-left:auto; }
+  .live { display:flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--green); letter-spacing:.1em; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:pulse 1.6s ease-in-out infinite; }
+  .dot.offline { background:var(--red); animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(52,211,153,.5)} 50%{opacity:.7;box-shadow:0 0 0 5px rgba(52,211,153,0)} }
+  .clk { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--txt2); }
+  .api-status { font-family:'JetBrains Mono',monospace; font-size:9px; padding:3px 8px; border:1px solid var(--border); color:var(--txt3); letter-spacing:.08em; }
+  .api-status.ok { border-color:rgba(52,211,153,.3); color:var(--green); }
+  .api-status.err { border-color:rgba(248,113,113,.3); color:var(--red); }
+  .refresh-btn { padding:5px 12px; font-size:11px; border:1px solid var(--border); background:transparent; color:var(--txt2); cursor:pointer; font-family:'JetBrains Mono',monospace; letter-spacing:.06em; transition:all .15s; display:flex; align-items:center; gap:6px; }
+  .refresh-btn:hover { border-color:var(--green); color:var(--green); }
+  .refresh-icon { display:inline-block; }
+  .refresh-btn.spinning .refresh-icon { animation:spin .8s linear infinite; }
+  .last-update { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); white-space:nowrap; }
+
+  /* LOADING / ERROR */
+  .loading-overlay {
+    position:fixed; inset:0; background:rgba(10,14,20,.9);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:999; gap:16px;
+  }
+  .loading-overlay.hidden { display:none; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--cyan); border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-txt { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--txt2); letter-spacing:.1em; }
+  .error-box { background:var(--panel); border:1px solid rgba(248,113,113,.4); padding:24px 32px; max-width:480px; text-align:center; }
+  .error-box h3 { color:var(--red); font-size:14px; margin-bottom:8px; letter-spacing:.05em; }
+  .error-box p { color:var(--txt2); font-size:12px; line-height:1.7; margin-bottom:16px; }
+  .error-box code { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--cyan); background:var(--surface); padding:2px 6px; border-radius:2px; }
+  .btn-retry { background:transparent; border:1px solid var(--cyan); color:var(--cyan); padding:8px 20px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.08em; transition:all .2s; }
+  .btn-retry:hover { background:rgba(56,189,248,.1); }
+
+  /* LAYOUT */
+  .page { padding:20px 28px 32px; max-width:1800px; margin:0 auto; }
+
+  /* KPI SECTION HEADER */
+  .section-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .section-lbl { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--txt3); letter-spacing:.16em; text-transform:uppercase; }
+
+  /* PER-CHART CONTROLS */
+  .card-controls { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+  .cf-sel {
+    background:var(--surface); border:1px solid var(--border);
+    color:var(--txt2); font-family:'JetBrains Mono',monospace;
+    font-size:9px; padding:3px 7px; cursor:pointer; outline:none;
+  }
+  .cf-sel:hover, .cf-sel:focus { border-color:rgba(56,189,248,.4); color:var(--cyan); }
+  .cf-sel option { background:var(--panel); color:var(--txt); }
+
+  /* KPIs */
+  .kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px; }
+  .kpi { background:var(--panel); border:1px solid var(--border); padding:16px 18px; position:relative; overflow:hidden; transition:transform .2s; }
+  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--kc); }
+  .kpi:hover { transform:translateY(-2px); }
+  .kpi-lbl { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--txt2); font-family:'JetBrains Mono',monospace; margin-bottom:8px; }
+  .kpi-val { font-size:28px; font-weight:700; color:var(--kc); line-height:1; margin-bottom:5px; }
+  .kpi-sub { font-size:11px; color:var(--txt3); font-family:'JetBrains Mono',monospace; }
+  .badge { display:inline-block; padding:2px 7px; font-size:10px; font-weight:600; border-radius:2px; }
+  .ok { background:rgba(52,211,153,.15); color:var(--green); }
+  .warn { background:rgba(251,191,36,.15); color:var(--yellow); }
+  .bad { background:rgba(248,113,113,.15); color:var(--red); }
+
+  /* GRID */
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+  .g21 { display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:16px; }
+  .gcol { display:flex; flex-direction:column; gap:16px; }
+
+  /* CARDS */
+  .card { background:var(--panel); border:1px solid var(--border); overflow:hidden; }
+  .card-head { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); gap:8px; }
+  .card-title { font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--txt2); font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:7px; flex-shrink:0; }
+  .ctdot { width:5px; height:5px; border-radius:50%; }
+  .card-badge { font-family:'JetBrains Mono',monospace; font-size:9px; padding:2px 7px; border:1px solid var(--border); color:var(--txt3); flex-shrink:0; }
+  .card-body { padding:16px 18px; }
+
+  /* LEGEND */
+  .legend { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px; }
+  .leg { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--txt2); }
+  .leg-sq { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .leg-line { width:18px; height:2px; flex-shrink:0; }
+
+  /* LINE STATUS */
+  .line-item { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); }
+  .line-item:last-child { border:none; }
+  .line-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .line-name { font-size:13px; font-weight:600; color:var(--txt); }
+  .line-model { font-size:10px; color:var(--txt2); font-family:'JetBrains Mono',monospace; }
+  .prog-wrap { margin:5px 0 0; }
+  .prog-bar { height:3px; background:var(--surface); border-radius:2px; overflow:hidden; width:90px; }
+  .prog-fill { height:100%; border-radius:2px; transition:width .8s; }
+  .line-prod { font-size:13px; font-weight:600; color:var(--txt); }
+  .line-fpy { font-size:10px; font-family:'JetBrains Mono',monospace; }
+  .s-pill { font-size:9px; font-family:'JetBrains Mono',monospace; padding:2px 7px; letter-spacing:.1em; text-transform:uppercase; border-radius:2px; display:inline-block; }
+  .s-running { background:rgba(52,211,153,.12); color:var(--green); border:1px solid rgba(52,211,153,.25); }
+  .s-stopped { background:rgba(248,113,113,.12); color:var(--red); border:1px solid rgba(248,113,113,.25); }
+  .s-maintenance { background:rgba(251,191,36,.12); color:var(--yellow); border:1px solid rgba(251,191,36,.25); }
+
+  /* CHARTS */
+  .ch-wrap { position:relative; width:100%; }
+
+  ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-track { background:var(--bg); } ::-webkit-scrollbar-thumb { background:var(--border); }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+  .kpi { animation:fadeUp .5s ease both; }
+  .kpi:nth-child(1){animation-delay:.04s} .kpi:nth-child(2){animation-delay:.08s}
+  .kpi:nth-child(3){animation-delay:.12s} .kpi:nth-child(4){animation-delay:.16s}
+  .kpi:nth-child(5){animation-delay:.20s}
+  .card { animation:fadeUp .5s ease both; animation-delay:.2s; }
+
+  /* CHAT SIDEBAR */
+  .main-wrap { margin-right: 340px; }
+
+  .chat-sidebar {
+    position:fixed; right:0; top:0; bottom:0; width:340px;
+    background:var(--panel); border-left:1px solid var(--border);
+    display:flex; flex-direction:column; z-index:50;
+  }
+  .chat-head {
+    height:58px; padding:0 16px; flex-shrink:0;
+    border-bottom:1px solid var(--border);
+    display:flex; flex-direction:column; justify-content:center; gap:3px;
+  }
+  .chat-head-title {
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
+    letter-spacing:.12em; color:var(--txt2); display:flex; align-items:center; gap:7px;
+  }
+  .chat-head-sub { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); letter-spacing:.08em; }
+
+  .chat-msgs {
+    flex:1; overflow-y:auto; padding:14px 12px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .chat-msg { display:flex; flex-direction:column; }
+  .chat-msg.user { align-items:flex-end; }
+  .chat-msg.assistant, .chat-msg.error { align-items:flex-start; }
+  .msg-bubble {
+    max-width:90%; padding:9px 12px; font-size:12px; line-height:1.65;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .chat-msg.user .msg-bubble {
+    background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.2); color:var(--txt);
+  }
+  .chat-msg.assistant .msg-bubble {
+    background:var(--surface); border:1px solid var(--border); color:var(--txt);
+  }
+  .chat-msg.error .msg-bubble {
+    background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.2); color:var(--red);
+  }
+  .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); margin-top:3px; padding:0 3px; }
+
+  .chat-input-wrap {
+    padding:12px; border-top:1px solid var(--border);
+    display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
+  }
+  .chat-input {
+    flex:1; background:var(--surface); border:1px solid var(--border);
+    color:var(--txt); font-family:'Inter',sans-serif; font-size:12px;
+    padding:8px 10px; resize:none; outline:none; line-height:1.5;
+    max-height:120px; overflow-y:auto;
+  }
+  .chat-input:focus { border-color:rgba(56,189,248,.35); }
+  .chat-input::placeholder { color:var(--txt3); }
+  .chat-send {
+    width:34px; height:34px; flex-shrink:0; background:var(--cyan); border:none;
+    color:#0a0e14; font-size:18px; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:opacity .15s;
+  }
+  .chat-send:hover { opacity:.82; }
+  .chat-send:disabled { opacity:.35; cursor:not-allowed; }
+
+  .typing-dot {
+    display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:var(--txt2); margin:0 2px;
+    animation:typingBounce 1.2s ease-in-out infinite;
+  }
+  .typing-dot:nth-child(2){animation-delay:.2s}
+  .typing-dot:nth-child(3){animation-delay:.4s}
+  @keyframes typingBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-txt">Conectando à API...</div>
+</div>
+
+<!-- Error overlay -->
+<div class="loading-overlay hidden" id="errorOverlay">
+  <div class="error-box">
+    <h3>⚠ API inacessível</h3>
+    <p>
+      Não foi possível conectar em <code id="apiUrlDisplay"></code>.<br><br>
+      Verifique se o servidor FastAPI está rodando:<br>
+      <code>uvicorn main:app --reload</code>
+    </p>
+    <button class="btn-retry" onclick="initDashboard()">↺ Tentar novamente</button>
+  </div>
+</div>
+
+<div class="main-wrap">
+<header>
+  <div class="logo">
+    <div class="logo-hex"></div>
+    <div>
+      <div class="logo-name">MFG CONTROL</div>
+      <div class="logo-sub">PRODUCTION INTELLIGENCE</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <div class="api-status" id="apiStatus">API —</div>
+    <div class="live"><div class="dot" id="liveDot"></div><span id="liveLabel">CONECTANDO</span></div>
+    <div class="clk" id="clk">--:--:--</div>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
+      <span class="refresh-icon">↺</span> Atualizar
+    </button>
+    <span class="last-update" id="lastUpdate"></span>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- KPI section with own filters -->
+  <div class="section-bar">
+    <div class="section-lbl">Indicadores</div>
+    <div class="card-controls">
+      <select class="cf-sel" id="kpiRangeSel" onchange="refreshKPIs()">
+        <option value="7d">7 dias</option>
+        <option value="14d">14 dias</option>
+        <option value="30d">30 dias</option>
+        <option value="today">Hoje</option>
+      </select>
+      <select class="cf-sel" id="kpiShiftSel" onchange="refreshKPIs()">
+        <option value="A">Turno A</option>
+        <option value="B">Turno B</option>
+        <option value="C">Turno C</option>
+      </select>
+    </div>
+  </div>
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--cyan)"></div>Produção diária vs meta</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="prodRangeSel" onchange="refreshProd()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="prodShiftSel" onchange="refreshProd()">
+            <option value="all">Todos os turnos</option>
+            <option value="A">Turno A</option>
+            <option value="B">Turno B</option>
+            <option value="C">Turno C</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="legend">
+          <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.7)"></div>Produzido</div>
+          <div class="leg"><div class="leg-sq" style="background:rgba(248,113,113,.75)"></div>Defeitos</div>
+          <div class="leg"><div class="leg-line" style="border-top:2px dashed #64748b"></div>Meta diária</div>
+        </div>
+        <div class="ch-wrap" style="height:230px"><canvas id="prodChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--green)"></div>First Pass Yield — histórico</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="fpyRangeSel" onchange="refreshFpy()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="fpyShiftSel" onchange="refreshFpy()">
+            <option value="all">Todos os turnos</option>
+            <option value="A">Turno A</option>
+            <option value="B">Turno B</option>
+            <option value="C">Turno C</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="legend">
+          <div class="leg"><div class="leg-sq" style="background:var(--green)"></div>FPY %</div>
+          <div class="leg"><div class="leg-line" style="border-top:2px dashed var(--red)"></div>Meta 95%</div>
+        </div>
+        <div class="ch-wrap" style="height:230px"><canvas id="fpyChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="g21">
+    <div class="gcol">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><div class="ctdot" style="background:var(--blue)"></div>Produção por linha — comparativo</div>
+          <div class="card-controls">
+            <select class="cf-sel" id="lineCompRangeSel" onchange="refreshLineComp()">
+              <option value="7d">7 dias</option>
+              <option value="14d">14 dias</option>
+              <option value="30d">30 dias</option>
+              <option value="today">Hoje</option>
+            </select>
+            <select class="cf-sel" id="lineCompShiftSel" onchange="refreshLineComp()">
+              <option value="all">Todos os turnos</option>
+              <option value="A">Turno A</option>
+              <option value="B">Turno B</option>
+              <option value="C">Turno C</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="legend">
+            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Linha 1</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Linha 2</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(251,191,36,.8)"></div>Linha 3</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Linha 4</div>
+          </div>
+          <div class="ch-wrap" style="height:200px"><canvas id="lineCompChart"></canvas></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><div class="ctdot" style="background:var(--purple)"></div>OEE — eficiência global</div>
+          <div class="card-controls">
+            <select class="cf-sel" id="oeeRangeSel" onchange="refreshOee()">
+              <option value="7d">7 dias</option>
+              <option value="14d">14 dias</option>
+              <option value="30d">30 dias</option>
+              <option value="today">Hoje</option>
+            </select>
+            <select class="cf-sel" id="oeeShiftSel" onchange="refreshOee()">
+              <option value="all">Todos os turnos</option>
+              <option value="A">Turno A</option>
+              <option value="B">Turno B</option>
+              <option value="C">Turno C</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="legend">
+            <div class="leg"><div class="leg-sq" style="background:var(--purple)"></div>OEE</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.6)"></div>Disponibilidade</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.6)"></div>Performance</div>
+          </div>
+          <div class="ch-wrap" style="height:160px"><canvas id="oeeChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="gcol">
+      <div class="card" style="flex:1">
+        <div class="card-head">
+          <div class="card-title"><div class="ctdot" style="background:var(--green)"></div>Status das linhas</div>
+          <div class="card-badge">AGORA</div>
+        </div>
+        <div class="card-body" id="lineStatusWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--cyan)"></div>Produção por hora</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="hourRangeSel" onchange="refreshHour()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="hourShiftSel" onchange="refreshHour()">
+            <option value="A">Turno A</option>
+            <option value="B">Turno B</option>
+            <option value="C">Turno C</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="legend">
+          <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.75)"></div>Produção média ±1σ</div>
+          <div class="leg"><div class="leg-sq" style="background:rgba(248,113,113,.75)"></div>Defeitos médios ±1σ</div>
+          <div class="leg"><div class="leg-line" style="border-top:2px dashed #64748b"></div>Meta/hora</div>
+        </div>
+        <div class="ch-wrap" style="height:220px"><canvas id="hourChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--yellow)"></div>Eficiência por turno</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="shiftRangeSel" onchange="refreshShiftEff()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="legend">
+          <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Turno A</div>
+          <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Turno B</div>
+          <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Turno C</div>
+        </div>
+        <div class="ch-wrap" style="height:220px"><canvas id="shiftChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--orange)"></div>Defeitos por categoria</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="defCatRangeSel" onchange="refreshDefCat()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="defCatShiftSel" onchange="refreshDefCat()">
+            <option value="all">Todos os turnos</option>
+            <option value="A">Turno A</option>
+            <option value="B">Turno B</option>
+            <option value="C">Turno C</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="ch-wrap" style="height:220px"><canvas id="defChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title"><div class="ctdot" style="background:var(--red)"></div>Tendência de defeitos</div>
+        <div class="card-controls">
+          <select class="cf-sel" id="defTrendRangeSel" onchange="refreshDefTrend()">
+            <option value="7d">7 dias</option>
+            <option value="14d">14 dias</option>
+            <option value="30d">30 dias</option>
+            <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="defTrendShiftSel" onchange="refreshDefTrend()">
+            <option value="all">Todos os turnos</option>
+            <option value="A">Turno A</option>
+            <option value="B">Turno B</option>
+            <option value="C">Turno C</option>
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="legend">
+          <div class="leg"><div class="leg-sq" style="background:var(--red)"></div>Tela</div>
+          <div class="leg"><div class="leg-sq" style="background:var(--orange)"></div>Câmera</div>
+          <div class="leg"><div class="leg-sq" style="background:var(--purple)"></div>Bateria</div>
+          <div class="leg"><div class="leg-sq" style="background:var(--green)"></div>Outros</div>
+        </div>
+        <div class="ch-wrap" style="height:185px"><canvas id="defTrendChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</div><!-- /.main-wrap -->
+
+<aside class="chat-sidebar">
+  <div class="chat-head">
+    <div class="chat-head-title"><div class="ctdot" style="background:var(--cyan)"></div>ASSISTENTE IA</div>
+    <div class="chat-head-sub">Pergunte sobre os dados em linguagem natural</div>
+  </div>
+  <div class="chat-msgs" id="chatMsgs">
+    <div class="chat-msg assistant">
+      <div class="msg-bubble">Olá! Pergunte qualquer coisa sobre a produção, defeitos ou indicadores do dashboard.</div>
+      <div class="msg-time">agora</div>
+    </div>
+  </div>
+  <div class="chat-input-wrap">
+    <textarea class="chat-input" id="chatInput" rows="1"
+      placeholder="Ex: qual turno tem mais defeitos?"
+      onkeydown="chatKeydown(event)"></textarea>
+    <button class="chat-send" id="chatSendBtn" onclick="sendChat()">↑</button>
+  </div>
+</aside>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const API_BASE = 'http://localhost:8000';
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+document.getElementById('apiUrlDisplay').textContent = API_BASE;
+
+const charts = {};
+
+// RELÓGIO
+setInterval(() => {
+  document.getElementById('clk').textContent =
+    new Date().toLocaleTimeString('pt-BR', { hour12: false });
+}, 1000);
+
+// FETCH HELPERS
+async function api(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function rangeToDates(range) {
+  const fmt = d => d.toISOString().slice(0, 10);
+  const today = new Date();
+  if (range === 'today') return `from=${fmt(today)}&to=${fmt(today)}`;
+  const days = { '7d': 7, '14d': 14, '30d': 30 }[range] || 7;
+  const from = new Date(); from.setDate(today.getDate() - (days - 1));
+  return `from=${fmt(from)}&to=${fmt(today)}`;
+}
+
+function sel(id) { return document.getElementById(id).value; }
+
+// CHART HELPERS
+const gc = 'rgba(100,116,139,0.15)';
+const tc = '#64748b';
+function tip() {
+  return { backgroundColor:'#0f1520', borderColor:'#1e2d3d', borderWidth:1, titleColor:'#e2e8f0', bodyColor:'#94a3b8', titleFont:{family:'JetBrains Mono',size:11}, bodyFont:{family:'JetBrains Mono',size:11}, padding:10 };
+}
+function scX(extra={}) { return { grid:{color:gc}, ticks:{color:tc,font:{size:10,family:'JetBrains Mono'}}, ...extra }; }
+function scY(extra={}) { return { grid:{color:gc}, ticks:{color:tc,font:{size:10,family:'JetBrains Mono'}}, ...extra }; }
+function mkChart(id, config) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), config);
+}
+function rot(n) { return n > 10 ? 45 : 0; }
+
+// API STATUS
+function setApiOnline() {
+  document.getElementById('apiStatus').textContent = 'API ONLINE';
+  document.getElementById('apiStatus').className = 'api-status ok';
+  document.getElementById('liveDot').className = 'dot';
+  document.getElementById('liveLabel').textContent = 'AO VIVO';
+}
+function setApiOffline() {
+  document.getElementById('apiStatus').textContent = 'API OFFLINE';
+  document.getElementById('apiStatus').className = 'api-status err';
+  document.getElementById('liveDot').className = 'dot offline';
+  document.getElementById('liveLabel').textContent = 'DESCONECTADO';
+}
+
+// PLUGIN — error bars (bigodes ±1σ sobre as barras)
+const errorBarPlugin = {
+  id: 'errorBars',
+  afterDraw(chart) {
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((dataset, dsIdx) => {
+      if (!dataset.errorBars) return;
+      const meta = chart.getDatasetMeta(dsIdx);
+      if (meta.hidden) return;
+      const yScale = chart.scales[dataset.yAxisID || 'y'];
+      ctx.save();
+      ctx.strokeStyle = dataset.errorBarColor || 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      meta.data.forEach((bar, i) => {
+        const val = dataset.data[i];
+        const std = dataset.errorBars[i];
+        if (!std) return;
+        const x   = bar.x;
+        const cap = Math.min((bar.width || 12) * 0.28, 6);
+        const yT  = yScale.getPixelForValue(val + std);
+        const yB  = yScale.getPixelForValue(Math.max(0, val - std));
+        ctx.beginPath();
+        ctx.moveTo(x, yT); ctx.lineTo(x, yB);       // haste vertical
+        ctx.moveTo(x - cap, yT); ctx.lineTo(x + cap, yT); // bigode superior
+        ctx.moveTo(x - cap, yB); ctx.lineTo(x + cap, yB); // bigode inferior
+        ctx.stroke();
+      });
+      ctx.restore();
+    });
+  }
+};
+
+// SHARED HISTORICAL FETCH
+async function fetchHistorical(range, shift) {
+  const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
+  return api(`/production/historical?${rangeToDates(range)}${shiftParam}`);
+}
+
+// ── PER-CHART REFRESH FUNCTIONS ────────────────────────
+
+async function refreshKPIs() {
+  try {
+    const range = sel('kpiRangeSel');
+    const shift = sel('kpiShiftSel');
+    const k = await api(`/kpis?shift=${shift}&${rangeToDates(range)}`);
+    const pct = Math.round(k.total_produced / k.daily_target * 100);
+    const rangeLabel = { '7d':'(7 dias)', '14d':'(14 dias)', '30d':'(30 dias)', 'today':'hoje' }[range];
+    const kpis = [
+      { lbl:`Produzido ${rangeLabel}`, val: k.total_produced.toLocaleString('pt-BR'), sub:`${pct}% da meta`, badge:pct>=90?'ok':pct>=75?'warn':'bad', badgeT:`${pct}%`, kc:'var(--cyan)' },
+      { lbl:'First Pass Yield', val: k.first_pass_yield.toFixed(1)+'%', sub:`Meta: ≥ 95,0%`, badge:k.first_pass_yield>=95?'ok':'warn', badgeT:k.first_pass_yield>=95?'✓ OK':'⚠ Abaixo', kc:k.first_pass_yield>=95?'var(--green)':'var(--yellow)', stddev: k.stddev_fpy },
+      { lbl:'Taxa de defeito', val: k.defect_rate.toFixed(1)+'%', sub:`${k.scrapped} sucateados · ${k.reworked} retrabalho`, badge:k.defect_rate<=2?'ok':'warn', badgeT:k.defect_rate<=2?'Normal':'Monitorar', kc:'var(--orange)' },
+      { lbl:'OEE', val: k.oee.toFixed(1)+'%', sub:'Disp × Perf × Qualidade', badge:k.oee>=85?'ok':'warn', badgeT:'Meta 85%', kc:'var(--purple)', stddev: k.stddev_oee },
+      { lbl:'Downtime', val: k.downtime_minutes+' min', sub:'Paradas não planejadas', badge:k.downtime_minutes<60?'ok':'bad', badgeT:k.downtime_minutes<60?'OK':'Alto', kc:'var(--yellow)' },
+    ];
+    document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+      <div class="kpi" style="--kc:${k.kc}">
+        <div class="kpi-lbl">${k.lbl}</div>
+        <div class="kpi-val">${k.val}${k.stddev != null ? `<span style="font-size:13px;font-weight:400;color:var(--txt3);margin-left:4px">±${k.stddev.toFixed(1)}%</span>` : ''}</div>
+        <div class="kpi-sub"><span class="badge ${k.badge}">${k.badgeT}</span>&nbsp;${k.sub}</div>
+      </div>`).join('');
+  } catch(e) { console.error('KPIs:', e); }
+}
+
+async function refreshProd() {
+  try {
+    const h = await fetchHistorical(sel('prodRangeSel'), sel('prodShiftSel'));
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('prodChart', {
+      data: { labels, datasets: [
+        { type:'bar', label:'Produzido', data: h.map(d=>d.produced), backgroundColor:'rgba(96,165,250,.65)', borderRadius:3, order:2 },
+        { type:'bar', label:'Defeitos', data: h.map(d=>d.defects), backgroundColor:'rgba(248,113,113,.75)', borderRadius:3, order:3 },
+        { type:'line', label:'Meta', data: h.map(d=>d.target), borderColor:'#475569', borderWidth:1.5, borderDash:[6,4], pointRadius:0, fill:false, order:1 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY({min:0}) }
+      }
+    });
+  } catch(e) { console.error('prodChart:', e); }
+}
+
+async function refreshFpy() {
+  try {
+    const h = await fetchHistorical(sel('fpyRangeSel'), sel('fpyShiftSel'));
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('fpyChart', {
+      type:'line',
+      data: { labels, datasets: [
+        { label:'FPY %', data: h.map(d=>d.fpy), borderColor:'#34d399', borderWidth:2.5, pointBackgroundColor:'#34d399', pointRadius:n>15?0:3, fill:true, backgroundColor:'rgba(52,211,153,.07)', tension:.4 },
+        { label:'Meta', data: labels.map(()=>95), borderColor:'#f87171', borderWidth:1.5, borderDash:[5,4], pointRadius:0, fill:false },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY({min:85,max:100,ticks:{...scY().ticks,callback:v=>v+'%'}}) }
+      }
+    });
+  } catch(e) { console.error('fpyChart:', e); }
+}
+
+async function refreshLineComp() {
+  try {
+    const h = await fetchHistorical(sel('lineCompRangeSel'), sel('lineCompShiftSel'));
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('lineCompChart', {
+      type:'bar',
+      data: { labels, datasets: [
+        { label:'Linha 1', data: h.map(d=>d.line1), backgroundColor:'rgba(96,165,250,.75)', borderRadius:2 },
+        { label:'Linha 2', data: h.map(d=>d.line2), backgroundColor:'rgba(52,211,153,.75)', borderRadius:2 },
+        { label:'Linha 3', data: h.map(d=>d.line3), backgroundColor:'rgba(251,191,36,.75)', borderRadius:2 },
+        { label:'Linha 4', data: h.map(d=>d.line4), backgroundColor:'rgba(167,139,250,.75)', borderRadius:2 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY() }
+      }
+    });
+  } catch(e) { console.error('lineCompChart:', e); }
+}
+
+async function refreshOee() {
+  try {
+    const h = await fetchHistorical(sel('oeeRangeSel'), sel('oeeShiftSel'));
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('oeeChart', {
+      type:'line',
+      data: { labels, datasets: [
+        { label:'OEE', data: h.map(d=>d.oee), borderColor:'#a78bfa', borderWidth:2.5, pointRadius:n>15?0:2.5, fill:false, tension:.4 },
+        { label:'Disponib.', data: h.map(d=>d.availability), borderColor:'rgba(52,211,153,.6)', borderWidth:1.5, borderDash:[3,3], pointRadius:0, fill:false, tension:.4 },
+        { label:'Perf.', data: h.map(d=>d.performance), borderColor:'rgba(96,165,250,.6)', borderWidth:1.5, borderDash:[3,3], pointRadius:0, fill:false, tension:.4 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY({min:65,max:100,ticks:{...scY().ticks,callback:v=>v+'%'}}) }
+      }
+    });
+  } catch(e) { console.error('oeeChart:', e); }
+}
+
+async function refreshShiftEff() {
+  try {
+    const h = await fetchHistorical(sel('shiftRangeSel'), 'all');
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('shiftChart', {
+      type:'bar',
+      data: { labels, datasets: [
+        { label:'Turno A', data: h.map(d=>d.shift_a_efficiency), backgroundColor:'rgba(96,165,250,.8)', borderRadius:2 },
+        { label:'Turno B', data: h.map(d=>d.shift_b_efficiency), backgroundColor:'rgba(52,211,153,.8)', borderRadius:2 },
+        { label:'Turno C', data: h.map(d=>d.shift_c_efficiency), backgroundColor:'rgba(167,139,250,.8)', borderRadius:2 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY({min:65,max:100,ticks:{...scY().ticks,callback:v=>v+'%'}}) }
+      }
+    });
+  } catch(e) { console.error('shiftChart:', e); }
+}
+
+async function refreshHour() {
+  try {
+    const shift = sel('hourShiftSel');
+    const range = sel('hourRangeSel');
+    const hr = await api(`/production/hourly?shift=${shift}&${rangeToDates(range)}`);
+    const labels = hr.map(h => h.hour);
+    if (charts['hourChart']) charts['hourChart'].destroy();
+    charts['hourChart'] = new Chart(document.getElementById('hourChart'), {
+      data: { labels, datasets:[
+        { type:'bar', label:'Produção', data: hr.map(h=>h.avg_produced),
+          backgroundColor:'rgba(96,165,250,.75)', borderRadius:3, order:2,
+          errorBars: hr.map(h=>h.stddev_produced), errorBarColor:'rgba(96,165,250,0.9)' },
+        { type:'line', label:'Meta/hora', data: hr.map(h=>h.avg_target),
+          borderColor:'#475569', borderWidth:1.5, borderDash:[5,4], pointRadius:0, fill:false, order:1 },
+        { type:'bar', label:'Defeitos', data: hr.map(h=>h.avg_defects),
+          backgroundColor:'rgba(248,113,113,.75)', borderRadius:3, yAxisID:'y1', order:3,
+          errorBars: hr.map(h=>h.stddev_defects), errorBarColor:'rgba(248,113,113,0.9)' },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{display:false}, tooltip:{
+          ...tip(),
+          callbacks: {
+            label: ctx => {
+              const h = hr[ctx.dataIndex];
+              if (ctx.dataset.label === 'Produção')  return ` Produção: ${Math.round(h.avg_produced)} ±${Math.round(h.stddev_produced)}`;
+              if (ctx.dataset.label === 'Defeitos')  return ` Defeitos: ${h.avg_defects.toFixed(1)} ±${h.stddev_defects.toFixed(1)}`;
+              if (ctx.dataset.label === 'Meta/hora') return ` Meta: ${Math.round(h.avg_target)}`;
+            }
+          }
+        }},
+        scales:{
+          x: scX(),
+          y: scY({min:0}),
+          y1:{ position:'right', grid:{display:false}, ticks:{color:'#f87171',font:{size:10,family:'JetBrains Mono'}} }
+        }
+      },
+      plugins: [errorBarPlugin]
+    });
+  } catch(e) { console.error('hourChart:', e); }
+}
+
+async function refreshDefCat() {
+  try {
+    const range = sel('defCatRangeSel');
+    const shift = sel('defCatShiftSel');
+    const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
+    const dc = await api(`/defects?${rangeToDates(range)}${shiftParam}`);
+    mkChart('defChart', {
+      type:'bar',
+      data:{ labels: dc.map(d=>d.category), datasets:[{
+        data: dc.map(d=>d.count),
+        backgroundColor:['rgba(248,113,113,.8)','rgba(251,163,72,.8)','rgba(167,139,250,.8)','rgba(96,165,250,.8)','rgba(52,211,153,.8)','rgba(251,191,36,.8)','rgba(100,116,139,.7)'],
+        borderRadius:3, borderSkipped:false,
+      }]},
+      options:{ responsive:true, maintainAspectRatio:false, indexAxis:'y',
+        plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{
+          x:{ ...scX(), ticks:{ ...scX().ticks, callback: v => v.toLocaleString('pt-BR') } },
+          y:{ grid:{display:false}, ticks:{color:tc,font:{size:10,family:'JetBrains Mono'}} }
+        }
+      }
+    });
+  } catch(e) { console.error('defChart:', e); }
+}
+
+async function refreshDefTrend() {
+  try {
+    const h = await fetchHistorical(sel('defTrendRangeSel'), sel('defTrendShiftSel'));
+    const labels = h.map(d => d.label);
+    const n = labels.length;
+    mkChart('defTrendChart', {
+      type:'line',
+      data: { labels, datasets: [
+        { label:'Tela', data: h.map(d=>d.defect_screen), borderColor:'#f87171', borderWidth:2, pointRadius:n>15?0:2.5, fill:false, tension:.4 },
+        { label:'Câmera', data: h.map(d=>d.defect_camera), borderColor:'#fb923c', borderWidth:2, borderDash:[4,2], pointRadius:n>15?0:2.5, fill:false, tension:.4 },
+        { label:'Bateria', data: h.map(d=>d.defect_battery), borderColor:'#a78bfa', borderWidth:2, borderDash:[2,3], pointRadius:n>15?0:2.5, fill:false, tension:.4 },
+        { label:'Outros', data: h.map(d=>d.defect_other), borderColor:'#34d399', borderWidth:1.5, pointRadius:0, fill:false, tension:.4 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
+        scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY({min:0}) }
+      }
+    });
+  } catch(e) { console.error('defTrendChart:', e); }
+}
+
+async function refreshLineStatus() {
+  try {
+    const lines = await api('/lines/status');
+    const sc = {running:'var(--green)',stopped:'var(--red)',maintenance:'var(--yellow)'};
+    const sl = {running:'running',stopped:'stopped',maintenance:'maintenance'};
+    const st = {running:'Rodando',stopped:'Parada',maintenance:'Manut.'};
+    document.getElementById('lineStatusWrap').innerHTML = lines.map(l => {
+      const p = Math.round(l.produced / l.target * 100);
+      return `<div class="line-item">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div class="line-dot" style="background:${sc[l.status]};margin-top:3px"></div>
+          <div>
+            <div class="line-name">${l.name} <span class="s-pill s-${sl[l.status]}">${st[l.status]}</span></div>
+            <div class="line-model">${l.model}</div>
+            <div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${Math.min(p,100)}%;background:${sc[l.status]}"></div></div></div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="line-prod">${l.produced.toLocaleString('pt-BR')} <span style="font-size:10px;color:var(--txt2);font-weight:400">un</span></div>
+          <div class="line-fpy" style="color:var(--txt2)">FPY ${l.fpy.toFixed(1)}%</div>
+          <div class="line-fpy" style="color:var(--txt3)">${p}% meta</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('lineStatus:', e); }
+}
+
+// ── REFRESH ALL ────────────────────────────────────────
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  try {
+    await api('/lines/status');
+    setApiOnline();
+  } catch(e) {
+    setApiOffline();
+    btn.classList.remove('spinning');
+    return;
+  }
+  await Promise.all([
+    refreshKPIs(), refreshProd(), refreshFpy(),
+    refreshLineComp(), refreshOee(), refreshShiftEff(),
+    refreshHour(), refreshDefCat(), refreshDefTrend(),
+    refreshLineStatus()
+  ]);
+  document.getElementById('lastUpdate').textContent =
+    'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour12: false });
+  btn.classList.remove('spinning');
+}
+
+// ── INIT ──────────────────────────────────────────────
+async function initDashboard() {
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('errorOverlay').classList.add('hidden');
+  try {
+    await api('/lines/status');
+    setApiOnline();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    await Promise.all([
+      refreshKPIs(), refreshProd(), refreshFpy(),
+      refreshLineComp(), refreshOee(), refreshShiftEff(),
+      refreshHour(), refreshDefCat(), refreshDefTrend(),
+      refreshLineStatus()
+    ]);
+    document.getElementById('lastUpdate').textContent =
+      'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour12: false });
+  } catch(e) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('errorOverlay').classList.remove('hidden');
+    setApiOffline();
+  }
+}
+
+// ── CHAT ──────────────────────────────────────────────
+let _msgId = 0;
+
+function _addMsg(role, html) {
+  const msgs = document.getElementById('chatMsgs');
+  const time = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+  const id = `cm${++_msgId}`;
+  const el = document.createElement('div');
+  el.className = `chat-msg ${role}`;
+  el.id = id;
+  el.innerHTML = `<div class="msg-bubble">${html}</div><div class="msg-time">${time}</div>`;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return id;
+}
+
+function _removeMsg(id) { document.getElementById(id)?.remove(); }
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const btn   = document.getElementById('chatSendBtn');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  _addMsg('user', text.replace(/</g, '&lt;'));
+  input.value = '';
+  input.style.height = 'auto';
+  btn.disabled = true;
+
+  const tid = _addMsg('assistant', '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>');
+
+  try {
+    const res  = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const data = await res.json();
+    _removeMsg(tid);
+    if (data.error) {
+      _addMsg('error', data.message || 'Erro no servidor.');
+    } else {
+      _addMsg('assistant', data.reply.replace(/</g, '&lt;').replace(/\n/g, '<br>'));
+    }
+  } catch(e) {
+    _removeMsg(tid);
+    _addMsg('error', 'Não foi possível conectar com o assistente.');
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+function chatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+document.getElementById('chatInput').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// ── START ─────────────────────────────────────────────
+initDashboard();
+</script>
+</body>
+</html>
