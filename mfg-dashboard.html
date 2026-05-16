@@ -152,24 +152,57 @@
   .kpi:nth-child(5){animation-delay:.20s}
   .card { animation:fadeUp .5s ease both; animation-delay:.2s; }
 
-  /* CHAT SIDEBAR */
-  .main-wrap { margin-right: 340px; }
+  /* CHAT SIDEBAR — draggable overlay */
+  .main-wrap { margin-right: 0; }
 
   .chat-sidebar {
-    position:fixed; right:0; top:0; bottom:0; width:340px;
+    position:fixed; right:0; top:58px; bottom:0; width:340px;
     background:var(--panel); border-left:1px solid var(--border);
-    display:flex; flex-direction:column; z-index:50;
+    display:flex; flex-direction:column; z-index:200;
+    min-width:260px;
   }
+  .chat-sidebar.collapsed {
+    width:0 !important; min-width:0 !important; border-left:none; overflow:hidden; pointer-events:none;
+  }
+
+  /* drag handle */
+  .chat-resize-handle {
+    position:absolute; left:0; top:0; bottom:0; width:5px;
+    cursor:ew-resize; z-index:10;
+    background:transparent; transition:background .15s;
+  }
+  .chat-resize-handle:hover, .chat-resize-handle.active {
+    background:rgba(56,189,248,.22);
+  }
+
+  /* floating reopen button */
+  .chat-open-btn {
+    position:fixed; right:0; top:50%; transform:translateY(-50%);
+    z-index:201; writing-mode:vertical-rl;
+    background:var(--panel); border:1px solid var(--border); border-right:none;
+    color:var(--cyan); font-family:'JetBrains Mono',monospace;
+    font-size:10px; letter-spacing:.12em; padding:14px 6px;
+    cursor:pointer; display:none; transition:background .15s;
+  }
+  .chat-open-btn.visible { display:block; }
+  .chat-open-btn:hover { background:var(--surface); }
+
   .chat-head {
-    height:58px; padding:0 16px; flex-shrink:0;
+    padding:10px 14px 10px 18px; flex-shrink:0;
     border-bottom:1px solid var(--border);
-    display:flex; flex-direction:column; justify-content:center; gap:3px;
+    display:flex; flex-direction:column; justify-content:center; gap:4px;
   }
   .chat-head-title {
     font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
     letter-spacing:.12em; color:var(--txt2); display:flex; align-items:center; gap:7px;
   }
   .chat-head-sub { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); letter-spacing:.08em; }
+  .chat-collapse-btn {
+    background:none; border:1px solid var(--border); color:var(--txt2);
+    font-size:11px; font-family:'JetBrains Mono',monospace; padding:1px 6px;
+    cursor:pointer; line-height:1.4; transition:all .15s; flex-shrink:0;
+  }
+  .chat-collapse-btn:hover { border-color:var(--cyan); color:var(--cyan); }
 
   .chat-msgs {
     flex:1; overflow-y:auto; padding:14px 12px;
@@ -264,8 +297,8 @@
   <div class="logo">
     <div class="logo-hex"></div>
     <div>
-      <div class="logo-name">MFG CONTROL</div>
-      <div class="logo-sub">PRODUCTION INTELLIGENCE</div>
+      <div class="logo-name">MFG CONTROL <span style="font-size:10px;font-weight:500;color:var(--yellow);background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);padding:1px 6px;letter-spacing:.08em;vertical-align:middle;">DEMO</span></div>
+      <div class="logo-sub">PRODUCTION INTELLIGENCE — DADOS SIMULADOS</div>
     </div>
   </div>
   <div class="hdr-r">
@@ -532,17 +565,21 @@
 
 </div><!-- /.main-wrap -->
 
-<aside class="chat-sidebar">
+<button class="chat-open-btn" id="chatOpenBtn" onclick="openChat()">CHAT IA</button>
+
+<aside class="chat-sidebar" id="chatSidebar">
+  <div class="chat-resize-handle" id="chatResizeHandle"></div>
   <div class="chat-head">
-    <div class="chat-head-title"><div class="ctdot" style="background:var(--cyan)"></div>ASSISTENTE IA</div>
-    <div class="chat-head-sub">Pergunte sobre os dados em linguagem natural</div>
-  </div>
-  <div class="chat-msgs" id="chatMsgs">
-    <div class="chat-msg assistant">
-      <div class="msg-bubble">Olá! Pergunte qualquer coisa sobre a produção, defeitos ou indicadores do dashboard.</div>
-      <div class="msg-time">agora</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div class="chat-head-title"><div class="ctdot" style="background:var(--cyan)"></div>ASSISTENTE IA</div>
+      <button class="chat-collapse-btn" onclick="closeChat()" title="Fechar chat">✕</button>
+    </div>
+    <div class="chat-head-sub" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>Pergunte sobre os dados em linguagem natural</span>
+      <button onclick="newChat()" title="Nova conversa" style="background:none;border:1px solid var(--border);color:var(--txt2);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:.06em;padding:2px 7px;cursor:pointer;">+ NOVA</button>
     </div>
   </div>
+  <div class="chat-msgs" id="chatMsgs"></div>
   <div class="chat-input-wrap">
     <textarea class="chat-input" id="chatInput" rows="1"
       placeholder="Ex: qual turno tem mais defeitos?"
@@ -930,7 +967,17 @@ async function initDashboard() {
 }
 
 // ── CHAT ──────────────────────────────────────────────
+let _sessionId = crypto.randomUUID();
 let _msgId = 0;
+
+const _welcomeMsg = 'Olá! Pergunte qualquer coisa sobre a produção, defeitos ou indicadores do dashboard.';
+
+function newChat() {
+  _sessionId = crypto.randomUUID();
+  const msgs = document.getElementById('chatMsgs');
+  msgs.innerHTML = '';
+  _addMsg('assistant', _welcomeMsg);
+}
 
 function _addMsg(role, html) {
   const msgs = document.getElementById('chatMsgs');
@@ -964,7 +1011,7 @@ async function sendChat() {
     const res  = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, session_id: _sessionId }),
     });
     const data = await res.json();
     _removeMsg(tid);
@@ -991,7 +1038,52 @@ document.getElementById('chatInput').addEventListener('input', function() {
   this.style.height = Math.min(this.scrollHeight, 120) + 'px';
 });
 
+// ── CHAT PANEL DRAG & TOGGLE ─────────────────────────
+(function() {
+  const sidebar = document.getElementById('chatSidebar');
+  const handle  = document.getElementById('chatResizeHandle');
+  const openBtn = document.getElementById('chatOpenBtn');
+  let dragging = false, startX = 0, startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebar.offsetWidth;
+    handle.classList.add('active');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ew-resize';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startX - e.clientX;
+    const maxW  = Math.floor(window.innerWidth * 0.5);
+    const newW  = Math.min(Math.max(startW + delta, 260), maxW);
+    sidebar.style.width = newW + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+
+  window.closeChat = function() {
+    sidebar.classList.add('collapsed');
+    openBtn.classList.add('visible');
+  };
+  window.openChat = function() {
+    sidebar.classList.remove('collapsed');
+    openBtn.classList.remove('visible');
+    document.getElementById('chatInput').focus();
+  };
+})();
+
 // ── START ─────────────────────────────────────────────
+_addMsg('assistant', _welcomeMsg);
 initDashboard();
 </script>
 </body>
