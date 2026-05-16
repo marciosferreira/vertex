@@ -6,6 +6,7 @@
 <title>MFG Control — Dashboard de Produção</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
   :root {
     --bg: #0a0e14;
@@ -179,8 +180,23 @@
   .chat-msg.assistant, .chat-msg.error { align-items:flex-start; }
   .msg-bubble {
     max-width:90%; padding:9px 12px; font-size:12px; line-height:1.65;
-    white-space:pre-wrap; word-break:break-word;
+    word-break:break-word;
   }
+  .msg-bubble p { margin:0 0 6px; }
+  .msg-bubble p:last-child { margin-bottom:0; }
+  .msg-bubble ul, .msg-bubble ol { margin:4px 0 6px 16px; padding:0; }
+  .msg-bubble li { margin-bottom:2px; }
+  .msg-bubble strong { font-weight:600; }
+  .msg-bubble em { font-style:italic; }
+  .msg-bubble code { font-family:'JetBrains Mono',monospace; font-size:11px; background:rgba(255,255,255,.06); padding:1px 4px; border-radius:3px; }
+  .msg-bubble pre { background:rgba(0,0,0,.3); border:1px solid var(--border); border-radius:5px; padding:8px 10px; overflow-x:auto; margin:6px 0; }
+  .msg-bubble pre code { background:none; padding:0; font-size:11px; }
+  .msg-bubble table { border-collapse:collapse; font-size:11px; width:100%; margin:6px 0; }
+  .msg-bubble th { background:rgba(255,255,255,.06); font-weight:600; text-align:left; padding:4px 8px; border:1px solid var(--border); }
+  .msg-bubble td { padding:3px 8px; border:1px solid var(--border); }
+  .msg-bubble tr:nth-child(even) td { background:rgba(255,255,255,.02); }
+  .msg-bubble h1,.msg-bubble h2,.msg-bubble h3 { font-size:13px; font-weight:600; margin:8px 0 4px; }
+  .msg-bubble blockquote { border-left:3px solid var(--border); margin:4px 0; padding-left:8px; color:var(--txt2); }
   .chat-msg.user .msg-bubble {
     background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.2); color:var(--txt);
   }
@@ -955,7 +971,7 @@ async function sendChat() {
     if (data.error) {
       _addMsg('error', data.message || 'Erro no servidor.');
     } else {
-      _addMsg('assistant', data.reply.replace(/</g, '&lt;').replace(/\n/g, '<br>'));
+      _addMsg('assistant', marked.parse(data.reply));
     }
   } catch(e) {
     _removeMsg(tid);

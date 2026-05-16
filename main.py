@@ -143,6 +143,7 @@ def build_filters(
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: str = "default"
 
 
 @app.post("/chat")
@@ -153,7 +154,7 @@ async def chat(req: ChatRequest):
             status_code=503,
             content=_error_body(503, "ServiceUnavailable", "Agente IA não configurado. Verifique PROJECT_ID, LOCATION e credentials.json.", "/chat"),
         )
-    reply = await asyncio.to_thread(invoke_multi_agent, req.message)
+    reply = await asyncio.to_thread(lambda: invoke_multi_agent(req.message, req.session_id))
     return {"reply": reply}
 
 

@@ -1,53 +1,32 @@
 # =============================================================================
-# Requirements - POSH A2A Mexico
-# =============================================================================
-# Este arquivo lista as dependencias para o modulo a2a-mx.
-# O modulo herda a maioria das dependencias do pacote a2a (core).
+# MFG Control — Dependências
 # =============================================================================
 
-# Google Cloud
-functions-framework>=3.0.0
-google-cloud-storage>=2.10.0
-google-cloud-logging>=3.5.0
-cloudevents>=1.9.0
+# API
+fastapi==0.118.0
+uvicorn==0.37.0
+pydantic==2.9.2
+pydantic-settings==2.11.0
+python-multipart==0.0.20
 
-# Vertex AI / Gemini
-google-cloud-aiplatform>=1.38.0
-vertexai>=1.38.0
+# Ambiente
+python-dotenv==1.1.1
+
+# HTTP
+requests==2.32.3
+httpx==0.27.2
+
+# Google Vertex AI / Gemini
+google-cloud-aiplatform==1.71.1
+vertexai==1.71.1
 
 # LangChain / LangGraph (agente IA)
-langchain>=0.3.0
-langchain-core>=0.3.0
-langchain-google-vertexai>=2.0.0
-langgraph>=0.2.0
+langchain==0.3.30
+langchain-core==0.3.86
+langchain-google-vertexai==2.0.9
+langgraph==1.0.1
+langgraph-checkpoint-sqlite==3.0.3
 
-# Pydantic
-pydantic==2.9.2
-pydantic-settings>=2.0.0
-
-# HTTP / API
-requests>=2.31.0
-httpx>=0.24.0
-
-# Data processing
-pandas>=2.0.0
-openpyxl>=3.1.0
-pdfplumber>=0.10.0
-Pillow==11.0.0
-python-dateutil>=2.8.0
+# Utilitários
+structlog==25.5.0
 tenacity==9.0.0
-
-# Fuzzy matching
-rapidfuzz>=3.0.0
-
-# YAML
-PyYAML>=6.0
-
-# Environment
-python-dotenv>=1.0.0
-
-# Database (PostgreSQL)
-psycopg2-binary>=2.9.0
-
-# Logging
-structlog>=23.1.0
