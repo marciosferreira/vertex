@@ -40,6 +40,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from typing_extensions import Annotated, TypedDict
 
+import chart_store
+
 logger = logging.getLogger(__name__)
 
 SKILLS_FOLDER = Path(__file__).parent / "skills"
@@ -79,11 +81,15 @@ def _tlog(tool: str, event: str, **kwargs) -> None:
 # entre invocações do sub-agente. O LLM recebe um resumo das variáveis ao final
 # de cada tool para saber o que já está disponível para análises incrementais.
 
-import pandas as pd
+import matplotlib
+matplotlib.use("Agg")  # backend sem display — obrigatório em servidor
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy import stats as scipy_stats
 
-_BUILTINS_SKIP = {"pd", "np", "__builtins__", "__doc__", "__name__", "__package__",
-                  "__spec__", "__loader__", "__import__", "__build_class__"}
+_BUILTINS_SKIP = {"pd", "np", "plt", "stats", "__builtins__", "__doc__", "__name__",
+                  "__package__", "__spec__", "__loader__", "__import__", "__build_class__"}
 
 _namespaces: dict = {}       # session → namespace dict
 _ns_last_access: dict = {}   # session → datetime do último acesso
@@ -94,7 +100,7 @@ def _ns_get() -> dict:
     session = _current_session.get()
     with _ns_lock:
         if session not in _namespaces:
-            _namespaces[session] = {"pd": pd, "np": np}
+            _namespaces[session] = {"pd": pd, "np": np, "plt": plt, "stats": scipy_stats}
         _ns_last_access[session] = datetime.now()
         return _namespaces[session]
 
@@ -239,7 +245,17 @@ def analisar_dataframe(script: str) -> str:
         if console:
             parts.append(f"```\n{console}\n```")
         if result is not None:
-            if isinstance(result, pd.DataFrame):
+            if isinstance(result, matplotlib.figure.Figure):
+                buf = io.BytesIO()
+                result.savefig(
+                    buf, format="png", dpi=130, bbox_inches="tight",
+                    facecolor="#0f1520", edgecolor="none",
+                )
+                buf.seek(0)
+                chart_id = chart_store.save_chart(_current_session.get(), buf.getvalue())
+                plt.close(result)
+                parts.append(f"[chart:{chart_id}]")
+            elif isinstance(result, pd.DataFrame):
                 if len(result) <= _MAX_RESULT_ROWS:
                     parts.append(result.to_markdown(index=False))
                 else:
@@ -521,6 +537,7 @@ def init_multi_agent(project: str, location: str, model_name: str) -> None:
         conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
         _checkpointer = SqliteSaver(conn)
 
+        chart_store.init_chart_store(DB_PATH)
         _sub_agent_graph = _build_sub_agent(llm)
         _orchestrator_graph = _build_orchestrator(llm, _checkpointer)
         logger.info("Multi-agente inicializado: orquestrador + sub-agente analista")

@@ -24,6 +24,7 @@ e cruzando os resultados pelo campo `date`. Exemplo:
 import asyncio
 import logging
 import os
+import re
 import traceback
 from datetime import date, timedelta
 from pathlib import Path
@@ -43,6 +44,15 @@ except ImportError:
     _VERTEX_AVAILABLE = False
 
 from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready
+import chart_store as cs
+
+_CHART_RE = re.compile(r'\[chart:([a-f0-9\-]{36})\]')
+
+def _embed_charts(text: str) -> str:
+    def _replace(m: re.Match) -> str:
+        b64 = cs.get_chart_b64(m.group(1))
+        return f"![grafico](data:image/png;base64,{b64})" if b64 else "[gráfico indisponível]"
+    return _CHART_RE.sub(_replace, text)
 
 
 def _init_vertex():
@@ -155,7 +165,7 @@ async def chat(req: ChatRequest):
             content=_error_body(503, "ServiceUnavailable", "Agente IA não configurado. Verifique PROJECT_ID, LOCATION e credentials.json.", "/chat"),
         )
     reply = await asyncio.to_thread(lambda: invoke_multi_agent(req.message, req.session_id))
-    return {"reply": reply}
+    return {"reply": _embed_charts(reply)}
 
 
 # ── raiz ──────────────────────────────────────────────────────────────────────

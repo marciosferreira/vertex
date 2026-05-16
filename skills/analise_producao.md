@@ -60,3 +60,59 @@ Nunca tente filtrar turno no DataFrame após o carregamento.
 | defect_camera      | int   | Defeitos de câmera                                     |
 | defect_battery     | int   | Defeitos de bateria                                    |
 | defect_other       | int   | Outros defeitos                                        |
+
+---
+
+## Ambiente de execução
+
+O script em `analisar_dataframe` tem acesso às seguintes bibliotecas pré-importadas:
+
+| Variável | Biblioteca       | Uso principal                                      |
+|----------|------------------|----------------------------------------------------|
+| `pd`     | pandas           | DataFrames, filtros, agregações                    |
+| `np`     | numpy            | Operações numéricas                                |
+| `plt`    | matplotlib.pyplot| Geração de gráficos                                |
+| `stats`  | scipy.stats      | Testes estatísticos                                |
+
+### Análises estatísticas disponíveis via `stats`
+
+| Necessidade                        | Função                            |
+|------------------------------------|-----------------------------------|
+| Comparar dois turnos (médias)      | `stats.ttest_ind(a, b)`           |
+| Comparar três turnos               | `stats.f_oneway(a, b, c)`         |
+| Não-paramétrico (distribuição livre)| `stats.mannwhitneyu(a, b)`       |
+| Correlação linear                  | `stats.pearsonr(x, y)`            |
+| Correlação por ranking             | `stats.spearmanr(x, y)`           |
+| Verificar normalidade              | `stats.shapiro(x)`                |
+
+Use análise estatística sempre que o usuário pedir comparações entre turnos, linhas
+ou períodos, ou quando quiser validar se uma diferença observada é significativa.
+Inclua o p-value na resposta e interprete em linguagem simples (ex: "diferença
+estatisticamente significativa com p=0.02").
+
+---
+
+## Geração de gráficos
+
+O ambiente de execução disponibiliza `plt` (matplotlib.pyplot) e `pd` (pandas).
+Para gerar um gráfico, atribua a figura à variável `result`:
+
+```python
+fig, ax = plt.subplots(figsize=(9, 4))
+ax.bar(producao['label'], producao['produced'], color='#60a5fa', label='Produzido')
+ax.bar(producao['label'], producao['defects'],  color='#f87171', label='Defeitos')
+ax.plot(producao['label'], producao['target'],  color='#475569', linestyle='--', label='Meta')
+ax.set_facecolor('#0f1520')
+ax.tick_params(colors='#64748b')
+ax.legend(facecolor='#141c27', labelcolor='#e2e8f0')
+fig.patch.set_facecolor('#0f1520')
+result = fig
+```
+
+- Atribuir `result = fig` é suficiente — o sistema salva e exibe o gráfico automaticamente.
+- Use `facecolor='#0f1520'` no figure e nos eixos para manter o tema escuro do dashboard.
+- Cores recomendadas: produzido `#60a5fa`, defeitos `#f87171`, meta `#475569` (dashed),
+  FPY/verde `#34d399`, OEE/roxo `#a78bfa`, amarelo `#fbbf24`.
+- Gráfico e tabela podem coexistir: chame `analisar_dataframe` duas vezes — uma para
+  a tabela (result = df) e outra para o gráfico (result = fig).
+- Sempre feche os eixos desnecessários e use `bbox_inches='tight'` implícito (já configurado).
