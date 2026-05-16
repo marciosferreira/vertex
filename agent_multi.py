@@ -23,6 +23,7 @@ import contextvars
 import io
 import logging
 import os
+import queue as _queue_module
 import sqlite3
 import sys
 import textwrap
@@ -141,13 +142,242 @@ def _ns_summary(ns: dict) -> str:
     return "\n---\n**Variáveis disponíveis no ambiente** (criadas em passos anteriores):\n" + "\n".join(lines)
 
 
+# ── Extração de thinking / texto de mensagens Gemini ─────────────────────────
+
+def _extract_thinking(msg) -> str:
+    content = getattr(msg, "content", "")
+    if isinstance(content, list):
+        return "\n".join(
+            p.get("thinking", "") for p in content
+            if isinstance(p, dict) and p.get("type") == "thinking"
+        )
+    return getattr(msg, "additional_kwargs", {}).get("reasoning_content", "")
+
+
+def _extract_text_content(msg) -> str:
+    content = getattr(msg, "content", "")
+    if isinstance(content, list):
+        return "\n".join(
+            p.get("text", "") for p in content
+            if isinstance(p, dict) and p.get("type") in ("text", None)
+        )
+    return content if isinstance(content, str) else ""
+
+
+# ── Side-channel de eventos do sub-agente ─────────────────────────────────────
+# O sub-agente roda dentro de um @tool (analisar_grafico), fora do stream do
+# orquestrador. Usamos uma fila por sessão para capturar thinking e tool calls
+# do sub-agente e entregá-los ao stream principal após cada nó completar.
+
+_event_queues: dict = {}  # session_id → queue.Queue
+_eq_lock = threading.Lock()
+
+_TOOL_LABELS: dict[str, str] = {
+    "read_skill":           "📖 Lendo instruções da skill",
+    "calcular_periodo":     "📅 Calculando período",
+    "chamar_api":           "🌐 Buscando dados da API",
+    "analisar_dataframe":   "🔢 Processando e analisando dados",
+    "analisar_grafico":     "🔍 Delegando ao sub-agente analista",
+    "get_current_datetime": "🕐 Verificando data e hora",
+    "gerar_pdf":            "📄 Gerando relatório PDF",
+}
+
+
+def _push_event(session_id: str, event: dict) -> None:
+    with _eq_lock:
+        q = _event_queues.get(session_id)
+    if q is not None:
+        q.put(event)
+
+
 # ── Estado compartilhado ──────────────────────────────────────────────────────
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
+# ── Geração de PDF ───────────────────────────────────────────────────────────
+
+import re as _re
+import base64 as _b64
+
+_CHART_TOKEN_RE = _re.compile(r'\[chart:([a-f0-9\-]{36})\]')
+
+
+def _safe(text: str) -> str:
+    """Converte para latin-1 para compatibilidade com fontes core do fpdf2."""
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _pdf_render_table(pdf, rows: list[list[str]]) -> None:
+    from fpdf import FPDF
+    if not rows:
+        return
+    col_n = max(len(r) for r in rows)
+    col_w = 185 / col_n
+    for i, row in enumerate(rows):
+        if i == 0:
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(20, 28, 39)
+            pdf.set_text_color(226, 232, 240)
+        else:
+            pdf.set_font("Helvetica", "", 8)
+            fill = (10, 14, 20) if i % 2 == 0 else (14, 20, 30)
+            pdf.set_fill_color(*fill)
+            pdf.set_text_color(148, 163, 184)
+        for cell in row[:col_n]:
+            pdf.cell(col_w, 5.5, _safe(cell[:35]), border=1, fill=True)
+        pdf.ln()
+    pdf.ln(3)
+
+
+def _pdf_render_text(pdf, text: str) -> None:
+    table_rows: list[list[str]] = []
+
+    def flush_table():
+        if table_rows:
+            _pdf_render_table(pdf, table_rows)
+            table_rows.clear()
+
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s:
+            flush_table()
+            pdf.ln(2)
+            continue
+
+        # Linha separadora de tabela (|---|---|)
+        if s.startswith("|") and s.endswith("|") and _re.fullmatch(r'[\|\-\: ]+', s):
+            continue
+
+        # Linha de tabela
+        if s.startswith("|") and s.endswith("|"):
+            cells = [c.strip() for c in s[1:-1].split("|")]
+            table_rows.append(cells)
+            continue
+
+        flush_table()
+
+        if s.startswith("### "):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(226, 232, 240)
+            pdf.multi_cell(0, 6, _safe(s[4:]))
+            pdf.ln(1)
+        elif s.startswith("## "):
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(56, 189, 248)
+            pdf.multi_cell(0, 7, _safe(s[3:]))
+            pdf.ln(2)
+        elif s.startswith("# "):
+            pdf.set_font("Helvetica", "B", 15)
+            pdf.set_text_color(56, 189, 248)
+            pdf.multi_cell(0, 8, _safe(s[2:]))
+            pdf.ln(3)
+        elif s.startswith(("- ", "* ")):
+            clean = _re.sub(r'\*\*(.*?)\*\*', r'\1', s[2:])
+            clean = _re.sub(r'`(.*?)`', r'\1', clean)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(148, 163, 184)
+            pdf.multi_cell(0, 5, _safe(f"  • {clean}"))
+        else:
+            clean = _re.sub(r'\*\*(.*?)\*\*', r'\1', s)
+            clean = _re.sub(r'\*(.*?)\*', r'\1', clean)
+            clean = _re.sub(r'`(.*?)`', r'\1', clean)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(148, 163, 184)
+            pdf.multi_cell(0, 5, _safe(clean))
+
+    flush_table()
+
+
+def _build_pdf(titulo: str, conteudo: str, session_id: str) -> str:
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Cabeçalho
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(56, 189, 248)
+    pdf.multi_cell(0, 10, _safe(titulo))
+    pdf.ln(2)
+    pdf.set_draw_color(30, 45, 61)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+
+    # Divide conteúdo em partes de texto e tokens de chart
+    parts = _CHART_TOKEN_RE.split(conteudo)
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            _pdf_render_text(pdf, part)
+        else:
+            b64 = chart_store.get_chart_b64(part)
+            if b64:
+                img_bytes = _b64.b64decode(b64)
+                if pdf.get_y() > 210:
+                    pdf.add_page()
+                pdf.image(io.BytesIO(img_bytes), x=10, w=190)
+                pdf.ln(3)
+
+    pdf_bytes = bytes(pdf.output())
+    safe_name = _re.sub(r'[^\w\- ]', '', titulo)[:40].strip().replace(" ", "_")
+    filename = f"{safe_name or 'relatorio'}.pdf"
+    return chart_store.save_pdf(session_id, pdf_bytes, filename)
+
+
 # ── Tools do orquestrador ─────────────────────────────────────────────────────
+
+@tool
+def gerar_pdf(titulo: str, conteudo: str) -> str:
+    """Gera um relatório PDF e retorna um token de download.
+
+    Use APENAS quando o usuário pedir explicitamente um PDF ou relatório para download.
+    Deve ser chamado APÓS analisar_grafico ter retornado a análise completa.
+
+    Fluxo correto:
+      1. Chame analisar_grafico() para obter a análise com gráficos.
+      2. Chame gerar_pdf() passando o resultado completo como conteudo.
+      3. Responda ao usuário incluindo o token [pdf:uuid] retornado — ele será
+         automaticamente convertido em link de download.
+
+    REGRA DE CONTEÚDO — o argumento `conteudo` deve conter APENAS:
+      - Títulos de seções (ex: "## Produção por Linha")
+      - Tokens de gráficos gerados: [chart:uuid]
+      - Tabelas de dados em markdown
+      - Conclusões analíticas objetivas (números, tendências, comparações)
+
+    PROIBIDO no conteudo — NÃO inclua NENHUMA dessas formas de texto:
+      - Abertura: "Aqui está o gráfico...", "Segue abaixo...", "Conforme solicitado...", "Claro!"
+      - Fechamento: "Gerado a partir dos dados...", "Relatório gerado em...", "Espero que ajude!",
+        "Qualquer dúvida estou à disposição.", "Este relatório foi gerado automaticamente."
+      - Confirmações/meta-comentários: "Análise concluída!", "O PDF foi gerado.", "Pronto!"
+      - Qualquer frase que fale sobre o próprio relatório em vez de conter dados do relatório
+
+    Exemplos CORRETOS de conteudo:
+      "## Produção Semanal\\n[chart:abc-123]\\n\\nLinha 1 liderou com 1.240 un. (+8% vs meta).\\nFPY médio: 96,2%. Pior dia: segunda (91%)."
+
+    Exemplos ERRADOS (nunca incluir):
+      INÍCIO: "Aqui está a análise de produção que você pediu.\\n## Produção Semanal\\n..."
+      FIM: "...FPY médio: 96,2%.\\n\\nGerado a partir dos dados do sistema MFG."
+      FIM: "...FPY médio: 96,2%.\\n\\nEspero que o relatório seja útil!"
+
+    Args:
+        titulo: Título do relatório (ex: "Análise de Produção — Maio 2026").
+        conteudo: Análise em markdown com tokens [chart:uuid], tabelas e conclusões.
+                  Sem texto introdutório ou conversacional.
+    """
+    _tlog("gerar_pdf", "CHAMADA", titulo=titulo, conteudo_chars=len(conteudo))
+    try:
+        pdf_id = _build_pdf(titulo, conteudo, _current_session.get())
+        result = f"[pdf:{pdf_id}]"
+        _tlog("gerar_pdf", "RETORNO", status="OK", pdf_id=pdf_id)
+        return result
+    except Exception as e:
+        msg = f"Erro ao gerar PDF: {e}"
+        _tlog("gerar_pdf", "RETORNO", status="ERRO", erro=msg)
+        return msg
+
 
 @tool
 def get_current_datetime() -> str:
@@ -386,7 +616,17 @@ def _build_sub_agent(llm):
         "- NUNCA invente dados — use apenas resultados de analisar_dataframe.\n"
         "- Se analisar_dataframe retornar erro, corrija e chame novamente.\n"
         "- Formate SEMPRE a resposta final em markdown: use tabelas para dados tabulares, "
-        "**negrito** para valores relevantes e listas quando apropriado.\n\n"
+        "**negrito** para valores relevantes e listas quando apropriado.\n"
+        "- TIPO DE SAÍDA: a mensagem pode começar com um prefixo `[TIPO DE SAÍDA OBRIGATÓRIO: X]`.\n"
+        "  - GRAFICO → o script em analisar_dataframe DEVE atribuir `result = fig` "
+        "(figura matplotlib). NUNCA retorne apenas tabela quando o tipo for GRAFICO.\n"
+        "  - TABELA  → retorne os dados como tabela markdown (result = df ou DataFrame).\n"
+        "  - AMBOS   → gere gráfico (result = fig) em uma chamada e tabela em outra.\n"
+        "  Se não houver prefixo, padrão é GRAFICO.\n"
+        "- TOKENS DE GRÁFICO: quando analisar_dataframe retornar um token `[chart:uuid]`, "
+        "você DEVE copiá-lo LITERALMENTE na sua resposta final. "
+        "Nunca omita o token — sem ele o gráfico não aparece para o usuário. "
+        "Exemplo correto de resposta: 'Aqui está o gráfico:\\n\\n[chart:8655a54a-3a22-42cb-a2c9-8c613ae7007d]\\n\\nA produção ficou abaixo da meta em 13 dos 14 dias.'\n\n"
         f"## Skills disponíveis\n{catalogo}"
     )
 
@@ -402,6 +642,16 @@ def _build_sub_agent(llm):
 
         meta = getattr(response, "response_metadata", {})
         finish = meta.get("finish_reason", "")
+
+        # Empurra thinking e tool calls do sub-agente para o side-channel
+        session = _current_session.get()
+        thinking = _extract_thinking(response)
+        if thinking:
+            _push_event(session, {"type": "thinking", "text": thinking})
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            for tc in response.tool_calls:
+                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
+                _push_event(session, {"type": "tool", "name": tc["name"], "label": label})
 
         if finish == "MALFORMED_FUNCTION_CALL":
             bad = meta.get("finish_message", "")
@@ -447,8 +697,8 @@ def _build_sub_agent(llm):
 # ── Tool do orquestrador que dispara o sub-agente ────────────────────────────
 
 @tool
-def analisar_grafico(detalhes: str) -> str:
-    """Delega a análise de um gráfico ao sub-agente especialista.
+def analisar_grafico(detalhes: str, tipo: str = "grafico") -> str:
+    """Delega a análise ao sub-agente especialista.
 
     O sub-agente irá identificar a skill correta, buscar os dados na API
     e retornar uma análise baseada nos dados reais.
@@ -456,11 +706,22 @@ def analisar_grafico(detalhes: str) -> str:
     Args:
         detalhes: O que o usuário quer analisar (ex: "produção diária desta semana",
                   "produção vs meta dos últimos 14 dias").
+        tipo: Tipo de saída desejado. Use EXATAMENTE um dos valores abaixo:
+              - "grafico"  → o sub-agente DEVE gerar um gráfico matplotlib (result = fig).
+                             Use quando o usuário usou palavras como "gráfico", "chart",
+                             "plot", "visualize", "visualização", "mostre", "desenhe".
+              - "tabela"   → o sub-agente DEVE retornar dados em tabela markdown.
+                             Use quando o usuário usou palavras como "tabela", "lista",
+                             "dados", "mostre os números".
+              - "ambos"    → gráfico E tabela. Use quando o usuário pediu os dois,
+                             ou para análises completas / relatórios.
+              Padrão: "grafico". Em caso de dúvida, prefira "grafico".
     """
     if _sub_agent_graph is None:
         return "Sub-agente analista não inicializado."
+    msg_content = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n{detalhes}"
     resultado = _sub_agent_graph.invoke(
-        {"messages": [HumanMessage(content=detalhes)]},
+        {"messages": [HumanMessage(content=msg_content)]},
         config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 15},
     )
     content = resultado["messages"][-1].content
@@ -481,15 +742,28 @@ MAX_INTERACOES = int(os.getenv("MAX_INTERACOES", "10"))
 def _build_orchestrator(llm, checkpointer=None):
     ORQ_SYSTEM_PROMPT = (
         "Você é o agente orquestrador de um sistema de monitoramento industrial.\n\n"
-        "Você tem duas tools:\n"
+        "## Tools disponíveis\n"
         "- get_current_datetime(): use quando o usuário perguntar data ou hora.\n"
-        "- analisar_grafico(detalhes): use quando o usuário pedir análise de dados, "
-        "gráficos ou relatórios de produção. O sub-agente especialista irá buscar "
-        "os dados reais e retornar a análise.\n\n"
-        "Para perguntas que não exigem nenhuma dessas tools, responda diretamente."
+        "- analisar_grafico(detalhes, tipo): use quando o usuário pedir análise de dados, "
+        "gráficos ou relatórios. O sub-agente especialista busca os dados e retorna a análise.\n"
+        "  OBRIGATÓRIO: passe o parâmetro `tipo` conforme o pedido do usuário:\n"
+        "    tipo='grafico' → usuário pediu gráfico, chart, plot, visualização\n"
+        "    tipo='tabela'  → usuário pediu tabela, lista, dados, números\n"
+        "    tipo='ambos'   → usuário pediu os dois, ou análise completa / PDF\n"
+        "  Padrão: tipo='grafico'. Em caso de dúvida use 'grafico'.\n"
+        "- gerar_pdf(titulo, conteudo): use APENAS quando o usuário pedir explicitamente "
+        "um PDF ou relatório para download.\n"
+        "  REGRA ABSOLUTA: NUNCA chame gerar_pdf sem antes ter chamado analisar_grafico.\n"
+        "  O parametro conteudo DEVE ser o texto completo retornado por analisar_grafico.\n"
+        "  Fluxo obrigatório:\n"
+        "    1. Chame analisar_grafico() e aguarde o resultado completo.\n"
+        "    2. Chame gerar_pdf() passando EXATAMENTE o resultado de analisar_grafico como conteudo.\n"
+        "    3. Inclua o token [pdf:uuid] retornado na sua resposta — "
+        "ele será convertido em link de download automaticamente.\n\n"
+        "Para perguntas que não exigem tools, responda diretamente."
     )
 
-    orq_tools = [get_current_datetime, analisar_grafico]
+    orq_tools = [get_current_datetime, analisar_grafico, gerar_pdf]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 
@@ -564,6 +838,83 @@ def invoke_multi_agent(query: str, session_id: str = "default") -> str:
     )
     return resultado["messages"][-1].content
 
+
+
+def stream_multi_agent(query: str, session_id: str = "default"):
+    """Gerador que yields dicts de eventos SSE enquanto o agente processa.
+
+    Tipos de evento:
+      {"type": "thinking", "text": "..."}   — bloco de raciocínio do modelo
+      {"type": "tool",     "name": "...", "label": "..."}  — tool sendo chamada
+      {"type": "reply",    "text": "..."}   — resposta final (markdown)
+      {"type": "error",    "text": "..."}   — erro irrecuperável
+
+    Arquitetura de threading:
+      - O orquestrador roda em uma thread separada e coloca eventos numa queue.Queue.
+      - O sub-agente (dentro do ToolNode) também coloca eventos via _push_event na mesma
+        queue. Como rodam em threads diferentes, os eventos chegam em tempo real ao gerador.
+    """
+    if _orchestrator_graph is None:
+        yield {"type": "error", "text": "Agente não inicializado."}
+        return
+
+    _current_session.set(session_id)
+    with _ns_lock:
+        _namespaces.pop(session_id, None)
+        _ns_last_access.pop(session_id, None)
+
+    event_queue: _queue_module.Queue = _queue_module.Queue()
+    with _eq_lock:
+        _event_queues[session_id] = event_queue
+
+    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 20}
+
+    def _run_orchestrator():
+        # ContextVar não se propaga para threading.Thread — precisa setar explicitamente.
+        _current_session.set(session_id)
+        try:
+            for chunk in _orchestrator_graph.stream(
+                {"messages": [HumanMessage(content=query)]},
+                config=config,
+                stream_mode="updates",
+            ):
+                for node_name, update in chunk.items():
+                    messages = update.get("messages", [])
+                    if not isinstance(messages, list):
+                        messages = [messages]
+
+                    for msg in messages:
+                        thinking = _extract_thinking(msg)
+                        if thinking:
+                            event_queue.put({"type": "thinking", "text": thinking})
+
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
+                                event_queue.put({"type": "tool", "name": tc["name"], "label": label})
+
+                        if node_name == "orquestrador":
+                            text = _extract_text_content(msg)
+                            if text and not getattr(msg, "tool_calls", []):
+                                event_queue.put({"type": "reply", "text": text})
+
+        except Exception as e:
+            event_queue.put({"type": "error", "text": f"Erro interno: {e}"})
+        finally:
+            event_queue.put(None)  # sentinel — sinaliza fim do stream
+
+    orchestrator_thread = threading.Thread(target=_run_orchestrator, daemon=True)
+    orchestrator_thread.start()
+
+    try:
+        while True:
+            event = event_queue.get()
+            if event is None:
+                break
+            yield event
+    finally:
+        with _eq_lock:
+            _event_queues.pop(session_id, None)
 
 
 def is_multi_agent_ready() -> bool:

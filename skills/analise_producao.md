@@ -94,6 +94,20 @@ estatisticamente significativa com p=0.02").
 
 ## Geração de gráficos
 
+### Quando gerar gráfico vs tabela
+
+| O usuário diz...                              | Você deve...             |
+|-----------------------------------------------|--------------------------|
+| "gráfico", "chart", "plot", "visualização"    | gerar SOMENTE o gráfico  |
+| "tabela", "lista", "dados"                    | gerar SOMENTE a tabela   |
+| "gráfico e tabela" / "relatório completo"     | gerar os dois            |
+| nada específico (análise genérica)            | gráfico + resumo em texto|
+
+**NUNCA substitua um gráfico por uma tabela quando o usuário pedir um gráfico.**
+Se o usuário usou as palavras "gráfico", "chart", "plot" ou "visualize", o resultado
+DEVE conter um `result = fig`. Retornar apenas uma tabela nesse caso é considerado
+uma resposta errada.
+
 O ambiente de execução disponibiliza `plt` (matplotlib.pyplot) e `pd` (pandas).
 Para gerar um gráfico, atribua a figura à variável `result`:
 

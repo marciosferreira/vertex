@@ -32,7 +32,7 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from db import get_db, init_db
@@ -43,16 +43,36 @@ try:
 except ImportError:
     _VERTEX_AVAILABLE = False
 
-from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready
+import json
+import threading
+from sse_starlette.sse import EventSourceResponse
+from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent
 import chart_store as cs
 
 _CHART_RE = re.compile(r'\[chart:([a-f0-9\-]{36})\]')
+_PDF_RE   = re.compile(r'\[pdf:([a-f0-9\-]{36})\]')
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+
 
 def _embed_charts(text: str) -> str:
-    def _replace(m: re.Match) -> str:
-        b64 = cs.get_chart_b64(m.group(1))
-        return f"![grafico](data:image/png;base64,{b64})" if b64 else "[gráfico indisponível]"
-    return _CHART_RE.sub(_replace, text)
+    def _chart(m: re.Match) -> str:
+        chart_id = m.group(1)
+        if not cs.get_chart_b64(chart_id):
+            return "[gráfico indisponível]"
+        return f"![grafico]({BACKEND_URL}/chart/{chart_id})"
+
+    def _pdf(m: re.Match) -> str:
+        pdf_id = m.group(1)
+        row = cs.get_pdf(pdf_id)
+        if not row:
+            return "[PDF indisponível]"
+        _, filename = row
+        return f"[📥 {filename}]({BACKEND_URL}/pdf/{pdf_id})"
+
+    text = _CHART_RE.sub(_chart, text)
+    text = _PDF_RE.sub(_pdf, text)
+    return text
 
 
 def _init_vertex():
@@ -166,6 +186,69 @@ async def chat(req: ChatRequest):
         )
     reply = await asyncio.to_thread(lambda: invoke_multi_agent(req.message, req.session_id))
     return {"reply": _embed_charts(reply)}
+
+
+@app.get("/chart/{chart_id}")
+def serve_chart(chart_id: str):
+    """Serve um gráfico gerado pelo agente como PNG."""
+    b64 = cs.get_chart_b64(chart_id)
+    if not b64:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Gráfico não encontrado."})
+    import base64
+    png_bytes = base64.b64decode(b64)
+    return Response(content=png_bytes, media_type="image/png")
+
+
+@app.get("/pdf/{pdf_id}")
+def download_pdf(pdf_id: str):
+    """Serve um PDF gerado pelo agente para download."""
+    row = cs.get_pdf(pdf_id)
+    if not row:
+        return JSONResponse(status_code=404, content={"error": True, "message": "PDF não encontrado."})
+    pdf_bytes, filename = row
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/chat/stream")
+async def chat_stream(request: Request, message: str, session_id: str = "default"):
+    """Endpoint SSE — transmite thinking, tool calls e resposta final em tempo real."""
+    if not is_multi_agent_ready():
+        async def _err():
+            yield {"data": json.dumps({"type": "error", "text": "Agente IA não configurado."})}
+        return EventSourceResponse(_err())
+
+    async def generate():
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _run():
+            try:
+                for event in stream_multi_agent(message, session_id):
+                    if event.get("type") == "reply":
+                        event["text"] = _embed_charts(event["text"])
+                    asyncio.run_coroutine_threadsafe(queue.put(event), loop)
+            except Exception as e:
+                asyncio.run_coroutine_threadsafe(
+                    queue.put({"type": "error", "text": str(e)}), loop
+                )
+            finally:
+                asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+        while True:
+            if await request.is_disconnected():
+                break
+            event = await queue.get()
+            if event is None:
+                break
+            yield {"data": json.dumps(event)}
+
+    return EventSourceResponse(generate())
 
 
 # ── raiz ──────────────────────────────────────────────────────────────────────

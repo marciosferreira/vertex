@@ -157,7 +157,7 @@
 
   .chat-sidebar {
     position:fixed; right:0; top:58px; bottom:0; width:340px;
-    background:var(--panel); border-left:1px solid var(--border);
+    background:#131929; border-left:2px solid var(--cyan);
     display:flex; flex-direction:column; z-index:200;
     min-width:260px;
   }
@@ -179,22 +179,22 @@
   .chat-open-btn {
     position:fixed; right:0; top:50%; transform:translateY(-50%);
     z-index:201; writing-mode:vertical-rl;
-    background:var(--panel); border:1px solid var(--border); border-right:none;
+    background:#0c1525; border:2px solid var(--cyan); border-right:none;
     color:var(--cyan); font-family:'JetBrains Mono',monospace;
     font-size:10px; letter-spacing:.12em; padding:14px 6px;
     cursor:pointer; display:none; transition:background .15s;
   }
   .chat-open-btn.visible { display:block; }
-  .chat-open-btn:hover { background:var(--surface); }
+  .chat-open-btn:hover { background:#131929; }
 
   .chat-head {
     padding:10px 14px 10px 18px; flex-shrink:0;
-    border-bottom:1px solid var(--border);
+    background:#0c1525; border-bottom:1px solid rgba(56,189,248,.25);
     display:flex; flex-direction:column; justify-content:center; gap:4px;
   }
   .chat-head-title {
     font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
-    letter-spacing:.12em; color:var(--txt2); display:flex; align-items:center; gap:7px;
+    letter-spacing:.12em; color:var(--cyan); display:flex; align-items:center; gap:7px;
   }
   .chat-head-sub { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); letter-spacing:.08em; }
   .chat-collapse-btn {
@@ -231,11 +231,13 @@
   .msg-bubble h1,.msg-bubble h2,.msg-bubble h3 { font-size:13px; font-weight:600; margin:8px 0 4px; }
   .msg-bubble blockquote { border-left:3px solid var(--border); margin:4px 0; padding-left:8px; color:var(--txt2); }
   .msg-bubble img { max-width:100%; border:1px solid var(--border); border-radius:3px; margin:8px 0; display:block; }
+  .msg-bubble a { color:var(--cyan); text-decoration:none; border-bottom:1px solid rgba(56,189,248,.3); }
+  .msg-bubble a:hover { border-bottom-color:var(--cyan); }
   .chat-msg.user .msg-bubble {
     background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.2); color:var(--txt);
   }
   .chat-msg.assistant .msg-bubble {
-    background:var(--surface); border:1px solid var(--border); color:var(--txt);
+    background:#1a2540; border:1px solid rgba(56,189,248,.15); color:var(--txt);
   }
   .chat-msg.error .msg-bubble {
     background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.2); color:var(--red);
@@ -243,11 +245,11 @@
   .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); margin-top:3px; padding:0 3px; }
 
   .chat-input-wrap {
-    padding:12px; border-top:1px solid var(--border);
+    padding:12px; border-top:1px solid rgba(56,189,248,.2);
     display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
   }
   .chat-input {
-    flex:1; background:var(--surface); border:1px solid var(--border);
+    flex:1; background:#0c1525; border:1px solid rgba(56,189,248,.2);
     color:var(--txt); font-family:'Inter',sans-serif; font-size:12px;
     padding:8px 10px; resize:none; outline:none; line-height:1.5;
     max-height:120px; overflow-y:auto;
@@ -270,6 +272,41 @@
   .typing-dot:nth-child(2){animation-delay:.2s}
   .typing-dot:nth-child(3){animation-delay:.4s}
   @keyframes typingBounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+  /* THINKING UI */
+  .thinking-wrap {
+    background:rgba(56,189,248,.04); border:1px solid rgba(56,189,248,.13);
+    border-radius:3px; overflow:hidden; margin-bottom:6px;
+    font-family:'JetBrains Mono',monospace; font-size:10px;
+  }
+  .thinking-header {
+    display:flex; align-items:center; gap:6px; padding:5px 9px;
+    cursor:pointer; user-select:none; color:var(--cyan); letter-spacing:.08em;
+  }
+  .thinking-header:hover { background:rgba(56,189,248,.07); }
+  .thinking-count { color:var(--txt3); margin-left:auto; font-size:9px; }
+  .thinking-chevron { font-size:9px; color:var(--txt3); transition:transform .2s; }
+  .thinking-wrap.open .thinking-chevron { transform:rotate(180deg); }
+  .thinking-live {
+    padding:6px 9px; color:var(--txt2); line-height:1.6;
+    border-top:1px solid rgba(56,189,248,.08); word-break:break-word;
+  }
+  .thinking-live.is-tool { color:var(--yellow); }
+  .thinking-cursor {
+    display:inline-block; width:5px; height:11px; background:var(--cyan);
+    margin-left:3px; vertical-align:middle;
+    animation:blink .75s step-end infinite;
+  }
+  @keyframes blink { 50%{opacity:0} }
+  .thinking-history { border-top:1px solid rgba(56,189,248,.08); display:none; max-height:220px; overflow-y:auto; }
+  .thinking-wrap.open .thinking-history { display:block; }
+  .thinking-step {
+    padding:4px 9px; color:var(--txt3); border-bottom:1px solid rgba(30,45,61,.5);
+    line-height:1.6; word-break:break-word;
+  }
+  .thinking-step:last-child { border-bottom:none; }
+  .thinking-step-n { color:var(--txt3); margin-right:5px; opacity:.6; }
+  .thinking-step.is-tool { color:var(--yellow); }
 </style>
 </head>
 <body>
@@ -993,41 +1030,115 @@ function _addMsg(role, html) {
   return id;
 }
 
-function _removeMsg(id) { document.getElementById(id)?.remove(); }
+// ── Thinking UI ───────────────────────────────────────
 
-async function sendChat() {
+function _addThinkingMsg() {
+  const msgs = document.getElementById('chatMsgs');
+  const time = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+  const n = ++_msgId;
+  const ids = { msg:`tm${n}`, wrap:`tw${n}`, live:`tl${n}`, hist:`th${n}`, cnt:`tc${n}` };
+  const el = document.createElement('div');
+  el.className = 'chat-msg assistant';
+  el.id = ids.msg;
+  el.innerHTML = `
+    <div class="msg-bubble">
+      <div class="thinking-wrap" id="${ids.wrap}">
+        <div class="thinking-header" onclick="_toggleThinkingHistory('${ids.wrap}')">
+          <span style="letter-spacing:.08em">RACIOCÍNIO DA IA</span>
+          <span class="thinking-count" id="${ids.cnt}"></span>
+          <span class="thinking-chevron">▼</span>
+        </div>
+        <div class="thinking-live" id="${ids.live}">Iniciando<span class="thinking-cursor"></span></div>
+        <div class="thinking-history" id="${ids.hist}"></div>
+      </div>
+    </div>
+    <div class="msg-time">${time}</div>`;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return ids;
+}
+
+function _updateThinkingLive(ids, text, isTool = false) {
+  const live = document.getElementById(ids.live);
+  if (!live) return;
+  const preview = text.length > 140 ? text.slice(0, 140) + '…' : text;
+  live.className = 'thinking-live' + (isTool ? ' is-tool' : '');
+  live.innerHTML = preview + '<span class="thinking-cursor"></span>';
+  document.getElementById('chatMsgs').scrollTop = 99999;
+}
+
+function _addThinkingStep(ids, text, stepN, isTool = false) {
+  const hist = document.getElementById(ids.hist);
+  const cnt  = document.getElementById(ids.cnt);
+  if (!hist || !cnt) return;
+  const div = document.createElement('div');
+  div.className = 'thinking-step' + (isTool ? ' is-tool' : '');
+  const preview = text.length > 300 ? text.slice(0, 300) + '…' : text;
+  div.innerHTML = `<span class="thinking-step-n">${stepN}.</span>${preview}`;
+  hist.appendChild(div);
+  cnt.textContent = `${stepN} etapa${stepN > 1 ? 's' : ''}`;
+}
+
+function _finalizeThinking(ids, hasEvents) {
+  const live = document.getElementById(ids.live);
+  if (live) live.remove();
+  if (!hasEvents) document.getElementById(ids.msg)?.remove();
+}
+
+function _toggleThinkingHistory(wrapId) {
+  document.getElementById(wrapId)?.classList.toggle('open');
+}
+
+// ── sendChat com EventSource ──────────────────────────
+
+function sendChat() {
   const input = document.getElementById('chatInput');
   const btn   = document.getElementById('chatSendBtn');
   const text  = input.value.trim();
-  if (!text) return;
+  if (!text || btn.disabled) return;
 
   _addMsg('user', text.replace(/</g, '&lt;'));
   input.value = '';
   input.style.height = 'auto';
   btn.disabled = true;
 
-  const tid = _addMsg('assistant', '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>');
+  const ids = _addThinkingMsg();
+  let stepN = 0;
+  let hasEvents = false;
 
-  try {
-    const res  = await fetch(`${API_BASE}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, session_id: _sessionId }),
-    });
-    const data = await res.json();
-    _removeMsg(tid);
-    if (data.error) {
-      _addMsg('error', data.message || 'Erro no servidor.');
-    } else {
-      _addMsg('assistant', marked.parse(data.reply));
+  const url = `${API_BASE}/chat/stream?` + new URLSearchParams({ message: text, session_id: _sessionId });
+  const es = new EventSource(url);
+
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'thinking') {
+      hasEvents = true; stepN++;
+      _addThinkingStep(ids, ev.text, stepN, false);
+      _updateThinkingLive(ids, ev.text, false);
+    } else if (ev.type === 'tool') {
+      hasEvents = true; stepN++;
+      _addThinkingStep(ids, ev.label, stepN, true);
+      _updateThinkingLive(ids, ev.label, true);
+    } else if (ev.type === 'reply') {
+      es.close();
+      _finalizeThinking(ids, hasEvents);
+      _addMsg('assistant', marked.parse(ev.text));
+      btn.disabled = false;
+      input.focus();
+    } else if (ev.type === 'error') {
+      es.close();
+      _finalizeThinking(ids, false);
+      _addMsg('error', ev.text);
+      btn.disabled = false;
     }
-  } catch(e) {
-    _removeMsg(tid);
-    _addMsg('error', 'Não foi possível conectar com o assistente.');
-  } finally {
+  };
+
+  es.onerror = () => {
+    es.close();
+    _finalizeThinking(ids, false);
+    _addMsg('error', 'Conexão com o agente foi interrompida.');
     btn.disabled = false;
-    input.focus();
-  }
+  };
 }
 
 function chatKeydown(e) {
@@ -1082,6 +1193,15 @@ document.getElementById('chatInput').addEventListener('input', function() {
     document.getElementById('chatInput').focus();
   };
 })();
+
+// Links externos abrem em nova aba (compatible com marked v12+)
+marked.use({
+  hooks: {
+    postprocess(html) {
+      return html.replace(/<a href="/g, '<a target="_blank" rel="noopener" href="');
+    }
+  }
+});
 
 // ── START ─────────────────────────────────────────────
 _addMsg('assistant', _welcomeMsg);

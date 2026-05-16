@@ -27,6 +27,15 @@ def init_chart_store(db_path: Path) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    _conn.execute("""
+        CREATE TABLE IF NOT EXISTS pdfs (
+            pdf_id     TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            pdf_blob   BLOB NOT NULL,
+            filename   TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
     _conn.commit()
 
 
@@ -41,6 +50,31 @@ def save_chart(session_id: str, png_bytes: bytes) -> str:
         )
         _conn.commit()
     return chart_id
+
+
+def save_pdf(session_id: str, pdf_bytes: bytes, filename: str) -> str:
+    if _conn is None:
+        raise RuntimeError("chart_store não inicializado.")
+    pdf_id = str(uuid.uuid4())
+    with _lock:
+        _conn.execute(
+            "INSERT INTO pdfs (pdf_id, session_id, pdf_blob, filename) VALUES (?, ?, ?, ?)",
+            (pdf_id, session_id, pdf_bytes, filename),
+        )
+        _conn.commit()
+    return pdf_id
+
+
+def get_pdf(pdf_id: str) -> tuple[bytes, str] | None:
+    if _conn is None:
+        return None
+    with _lock:
+        row = _conn.execute(
+            "SELECT pdf_blob, filename FROM pdfs WHERE pdf_id = ?", (pdf_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return row[0], row[1]
 
 
 def get_chart_b64(chart_id: str) -> str | None:
