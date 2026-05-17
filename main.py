@@ -32,7 +32,7 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from db import get_db, init_db, LINE_MODEL
@@ -280,7 +280,8 @@ async def chat_stream(request: Request, message: str, session_id: str = "default
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "MFG Control API", "version": "4.0.0"}
+    html = Path(__file__).parent / "mfg-dashboard.html"
+    return FileResponse(html, media_type="text/html")
 
 
 # ── produção ──────────────────────────────────────────────────────────────────
