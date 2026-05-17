@@ -1,4 +1,4 @@
-# skill: status_linhas
+﻿# skill: status_linhas
 # descricao: Status em tempo real das linhas de produção — painel visual com estado (running/stopped/maintenance), progresso vs meta, FPY e velocidade de cada linha.
 # palavras-chave: status, linhas, running, stopped, maintenance, tempo real, progresso, operador, speed, painel
 
@@ -63,19 +63,19 @@ for i, (p, m, f, s) in enumerate(zip(prod, metas, status['fpy'], status['status'
             va='center', fontsize=8, color='#94a3b8')
 
 ax.set_xlim(0, 160)
-ax.set_xlabel('% da meta', color='#64748b')
-ax.set_title('Status das Linhas — Tempo Real', color='#e2e8f0', fontsize=12)
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
+ax.set_xlabel('% da meta', color='#334155')
+ax.set_title('Status das Linhas — Tempo Real', color='#1e293b', fontsize=12)
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
 ax.spines[:].set_visible(False)
 
 # Legenda de status
 from matplotlib.patches import Patch
 legenda = [Patch(color=c, label=s.capitalize()) for s, c in cor_status.items()]
-ax.legend(handles=legenda, facecolor='#141c27', labelcolor='#e2e8f0',
+ax.legend(handles=legenda, facecolor='white', labelcolor='#1e293b',
           fontsize=8, loc='lower right')
 
-fig.patch.set_facecolor('#0f1520')
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -102,16 +102,16 @@ bars = ax.bar(nomes, speed, color=cores, width=0.5, alpha=0.9)
 
 for bar, val, s in zip(bars, speed, status['status']):
     ax.text(bar.get_x() + bar.get_width() / 2, val + 1,
-            f'{val}%', ha='center', fontsize=9, color='#e2e8f0')
+            f'{val}%', ha='center', fontsize=9, color='#1e293b')
 
 ax.axhline(100, color='#475569', linestyle='--', linewidth=1, label='Capacidade nominal')
 ax.set_ylim(0, 115)
-ax.set_ylabel('Velocidade (%)', color='#64748b')
-ax.set_title('Velocidade das Linhas', color='#e2e8f0', fontsize=12)
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_ylabel('Velocidade (%)', color='#334155')
+ax.set_title('Velocidade das Linhas', color='#1e293b', fontsize=12)
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -153,7 +153,7 @@ result = status[cols].rename(columns={
 | `maintenance`  | `#fbbf24`              |
 | Fundo barra meta | `#1e293b`            |
 | Capacidade nominal | `#475569` dashed   |
-| Fundo figure   | `#0f1520`              |
-| Fundo eixos    | `#0f1520`              |
-| Texto/ticks    | `#64748b`              |
-| Título         | `#e2e8f0`              |
+| Fundo figure   | `white`              |
+| Fundo eixos    | `white`              |
+| Texto/ticks    | `#334155`              |
+| Título         | `#1e293b`              |

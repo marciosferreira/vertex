@@ -75,6 +75,26 @@ def get_db():
         conn.close()
 
 
+def shift_dates_to_today() -> int:
+    """Shift all dates so max(date) == today. Returns number of days shifted (0 if already up-to-date)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT MAX(date) as d FROM production").fetchone()
+        if not row or not row["d"]:
+            return 0
+        delta = (date.today() - date.fromisoformat(row["d"])).days
+        if delta <= 0:
+            return 0
+        conn.executescript(f"""
+            UPDATE production        SET date     = date(date,     '+{delta} days');
+            UPDATE defects           SET date     = date(date,     '+{delta} days');
+            UPDATE metrics           SET date     = date(date,     '+{delta} days');
+            UPDATE hourly_production SET date     = date(date,     '+{delta} days');
+            UPDATE alerts            SET datetime = datetime(datetime, '+{delta} days');
+        """)
+        conn.commit()
+        return delta
+
+
 def init_db():
     with get_db() as conn:
         conn.executescript("""

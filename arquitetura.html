@@ -48,7 +48,7 @@
                     Imagine ter um <strong class="text-white">analista de dados ou cientista de dados</strong> disponível a qualquer momento, capaz de acessar os dados reais da sua operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos.
                 </p>
                 <p class="text-slate-400 leading-relaxed text-sm md:text-base">
-                    É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana e qual o impacto no OEE?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+                    É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana e qual o impacto no OEE?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela, planilha Excel ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
                 </p>
                 <div class="mt-6 flex flex-wrap gap-3 text-xs font-mono">
                     <span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">📊 Gráficos customizados</span>
@@ -64,7 +64,7 @@
         <section class="bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-6">
             <h2 class="text-xs font-mono uppercase tracking-wider text-indigo-400 mb-3"><i class="fa-solid fa-compass"></i> A Arquitetura em uma frase</h2>
             <blockquote class="text-lg md:text-xl font-medium text-slate-200 italic leading-snug">
-                "Um <span class="text-indigo-400 underline decoration-indigo-400/40">orquestrador</span> que interpreta o pedido em linguagem natural delega para um <span class="text-indigo-400 underline decoration-indigo-400/40">sub-agente especialista</span> que consulta <span class="text-indigo-400 underline decoration-indigo-400/40">APIs e banco de dados em tempo real</span>, analisa os dados em sandbox Python e entrega gráficos, tabelas ou PDFs — tudo transmitido ao vivo via <span class="text-indigo-400 underline decoration-indigo-400/40">streaming SSE</span>, habilitando decisões rápidas e baseadas em informação."
+                "Um <span class="text-indigo-400 underline decoration-indigo-400/40">orquestrador</span> que interpreta o pedido em linguagem natural delega para um <span class="text-indigo-400 underline decoration-indigo-400/40">sub-agente especialista</span> que consulta <span class="text-indigo-400 underline decoration-indigo-400/40">APIs e banco de dados em tempo real</span>, analisa os dados em sandbox Python e entrega gráficos, tabelas, planilhas Excel ou PDFs — tudo transmitido ao vivo via <span class="text-indigo-400 underline decoration-indigo-400/40">streaming SSE</span>, habilitando decisões rápidas e baseadas em informação."
             </blockquote>
         </section>
 
@@ -82,7 +82,6 @@ graph LR
     subgraph Orquestrador
         Orch --> T1[get_current_datetime]
         Orch --> T2[analisar_grafico]
-        Orch --> T3[gerar_pdf]
     end
 
     T2 --> Sub[Sub-Agente Analista]
@@ -93,6 +92,8 @@ graph LR
         Sub --> S3[chamar_api]
         Sub --> S4[executar_sql]
         Sub --> S5[analisar_dataframe]
+        Sub --> S6[gerar_pdf]
+        Sub --> S7[gerar_excel]
     end
 
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;

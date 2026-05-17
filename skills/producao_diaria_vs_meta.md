@@ -1,4 +1,4 @@
-# skill: producao_diaria_vs_meta
+﻿# skill: producao_diaria_vs_meta
 # descricao: Gráfico de produção diária vs meta — barras de produção, linha de meta, filtros por turno, linha e modelo de aparelho.
 # palavras-chave: produção diária, meta, produzido, target, barras, histórico, modelo, phonex, turno, linha
 
@@ -74,12 +74,12 @@ ax.axhline(media, color='#94a3b8', linestyle=':', linewidth=1,
 step = max(1, n // 10)
 ax.set_xticks(range(0, n, step))
 ax.set_xticklabels(x[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Produção Diária vs Meta', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Unidades', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Produção Diária vs Meta', color='#1e293b', fontsize=12)
+ax.set_ylabel('Unidades', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -116,12 +116,12 @@ for i, (df, nome, cor) in enumerate(modelos):
 step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_ref[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Produção Diária por Modelo', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Unidades', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Produção Diária por Modelo', color='#1e293b', fontsize=12)
+ax.set_ylabel('Unidades', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -154,7 +154,7 @@ result = fig
 | PhoneX Lite           | `#34d399`        |
 | PhoneX Ultra          | `#a78bfa`        |
 | PhoneX Mini           | `#fbbf24`        |
-| Fundo figure          | `#0f1520`        |
-| Fundo eixos           | `#0f1520`        |
-| Texto/ticks           | `#64748b`        |
-| Título                | `#e2e8f0`        |
+| Fundo figure          | `white`        |
+| Fundo eixos           | `white`        |
+| Texto/ticks           | `#334155`        |
+| Título                | `#1e293b`        |

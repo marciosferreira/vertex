@@ -1,4 +1,4 @@
-# skill: eficiencia_por_turno
+﻿# skill: eficiencia_por_turno
 # descricao: Gráfico de eficiência por turno — comparativo A/B/C histórico ou snapshot atual, com barras agrupadas, radar e tendência por turno.
 # palavras-chave: eficiência, turno, shift, turno a, turno b, turno c, comparativo turnos, shift_a_efficiency, shift_b_efficiency, shift_c_efficiency, kpi
 
@@ -80,12 +80,12 @@ step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
 ax.set_ylim(50, 105)
-ax.set_title('Eficiência por Turno — Histórico', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Eficiência (%)', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Eficiência por Turno — Histórico', color='#1e293b', fontsize=12)
+ax.set_ylabel('Eficiência (%)', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -110,16 +110,16 @@ bars = ax.bar(turnos, efic, color=cores, width=0.5, alpha=0.9)
 
 for bar, val in zip(bars, efic):
     ax.text(bar.get_x() + bar.get_width() / 2, val + 0.5,
-            f'{val:.1f}%', ha='center', fontsize=10, color='#e2e8f0')
+            f'{val:.1f}%', ha='center', fontsize=10, color='#1e293b')
 
 ax.axhline(meta, color='#475569', linestyle='--', linewidth=1.2, label=f'Meta {meta}%')
 ax.set_ylim(0, 110)
-ax.set_title('Eficiência por Turno — Atual', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Eficiência (%)', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Eficiência por Turno — Atual', color='#1e293b', fontsize=12)
+ax.set_ylabel('Eficiência (%)', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -173,7 +173,7 @@ p_bc = stats.ttest_ind(b, c).pvalue
 | Turno C       | `#f87171`        |
 | Meta          | `#475569` dashed |
 | Médias        | mesma cor + `alpha=0.6` dotted |
-| Fundo figure  | `#0f1520`        |
-| Fundo eixos   | `#0f1520`        |
-| Texto/ticks   | `#64748b`        |
-| Título        | `#e2e8f0`        |
+| Fundo figure  | `white`        |
+| Fundo eixos   | `white`        |
+| Texto/ticks   | `#334155`        |
+| Título        | `#1e293b`        |

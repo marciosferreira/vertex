@@ -1,4 +1,4 @@
-# skill: producao_por_hora
+﻿# skill: producao_por_hora
 # descricao: Gráfico de produção por hora — média e desvio padrão por hora do turno, comparativo entre turnos, perfil intradiário com meta e defeitos.
 # palavras-chave: hora, horário, intradiário, turno, produção por hora, hourly, desvio padrão, perfil, pico, gargalo
 
@@ -76,7 +76,7 @@ ax2 = ax.twinx()
 ax2.bar(x, defeitos, color='#f87171', alpha=0.4, width=0.4, label='Defeitos (média)')
 ax2.set_ylabel('Defeitos', color='#f87171')
 ax2.tick_params(colors='#f87171')
-ax2.set_facecolor('#0f1520')
+ax2.set_facecolor('white')
 
 # Destaque da hora de pico
 pico_idx = int(avg.argmax())
@@ -90,18 +90,18 @@ ax.annotate(
 
 ax.set_xticks(list(x))
 ax.set_xticklabels(horas, fontsize=9)
-ax.set_title('Produção por Hora — Turno A', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Unidades produzidas', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
+ax.set_title('Produção por Hora — Turno A', color='#1e293b', fontsize=12)
+ax.set_ylabel('Unidades produzidas', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
 
 # Legenda combinada dos dois eixos
 lines1, labels1 = ax.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
 ax.legend(lines1 + lines2, labels1 + labels2,
-          facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
+          facecolor='white', labelcolor='#1e293b', fontsize=8)
 
-fig.patch.set_facecolor('#0f1520')
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -136,13 +136,13 @@ for ax, (df, nome, cor) in zip(axes, dados):
     ax.plot(x, meta, color='#475569', linestyle='--', linewidth=1, label='Meta')
     ax.set_xticks(list(x))
     ax.set_xticklabels(horas, fontsize=8)
-    ax.set_title(nome, color='#e2e8f0', fontsize=10)
-    ax.set_ylabel('Unidades', color='#64748b')
-    ax.set_facecolor('#0f1520')
-    ax.tick_params(colors='#64748b')
-    ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=7)
+    ax.set_title(nome, color='#1e293b', fontsize=10)
+    ax.set_ylabel('Unidades', color='#334155')
+    ax.set_facecolor('white')
+    ax.tick_params(colors='#334155')
+    ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=7)
 
-fig.patch.set_facecolor('#0f1520')
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -171,7 +171,7 @@ result = fig
 | Banda desvio padrão   | mesma cor + `alpha=0.15` |
 | Meta/hora             | `#475569` dashed         |
 | Defeitos (barras)     | `#f87171` + `alpha=0.4`  |
-| Fundo figure          | `#0f1520`                |
-| Fundo eixos           | `#0f1520`                |
-| Texto/ticks           | `#64748b`                |
-| Título                | `#e2e8f0`                |
+| Fundo figure          | `white`                |
+| Fundo eixos           | `white`                |
+| Texto/ticks           | `#334155`                |
+| Título                | `#1e293b`                |

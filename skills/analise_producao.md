@@ -1,4 +1,4 @@
-# skill: analise_producao
+﻿# skill: analise_producao
 # descricao: Dados de produção diária vs meta por linha e turno, incluindo defeitos e FPY.
 # palavras-chave: produção, meta, análise, eficiência, tendência, linha, turno, defeitos, fpy, oee
 
@@ -118,17 +118,17 @@ fig, ax = plt.subplots(figsize=(9, 4))
 ax.bar(x, producao['produced'], color='#60a5fa', label='Produzido')
 ax.bar(x, producao['defects'],  color='#f87171', label='Defeitos')
 ax.plot(x, producao['target'],  color='#475569', linestyle='--', label='Meta')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b')
 plt.xticks(rotation=45, ha='right')
-fig.patch.set_facecolor('#0f1520')
+fig.patch.set_facecolor('white')
 result = fig
 ```
 
 - **Eixo X sempre usa `date` formatado**: `pd.to_datetime(df['date']).dt.strftime('%d/%m')`. Nunca use `label` como eixo X — é dia da semana e se repete a cada 7 dias, causando dois pontos Y por X.
 - Atribuir `result = fig` é suficiente — o sistema salva e exibe o gráfico automaticamente.
-- Use `facecolor='#0f1520'` no figure e nos eixos para manter o tema escuro do dashboard.
+- Use `facecolor='white'` no figure e nos eixos para manter o tema escuro do dashboard.
 - Cores recomendadas: produzido `#60a5fa`, defeitos `#f87171`, meta `#475569` (dashed),
   FPY/verde `#34d399`, OEE/roxo `#a78bfa`, amarelo `#fbbf24`.
 - Gráfico e tabela podem coexistir: chame `analisar_dataframe` duas vezes — uma para

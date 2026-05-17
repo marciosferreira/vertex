@@ -1,4 +1,4 @@
-# skill: producao_por_linha
+﻿# skill: producao_por_linha
 # descricao: Gráfico comparativo de produção por linha (line1–line4) — barras agrupadas ou empilhadas por dia, com totais e destaque da linha líder.
 # palavras-chave: linha, line1, line2, line3, line4, comparativo, produção por linha, barras agrupadas, barras empilhadas
 
@@ -62,12 +62,12 @@ step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
 
-ax.set_title('Produção por Linha — Comparativo', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Unidades produzidas', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Produção por Linha — Comparativo', color='#1e293b', fontsize=12)
+ax.set_ylabel('Unidades produzidas', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -103,12 +103,12 @@ step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
 
-ax.set_title('Produção por Linha — Empilhada', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Unidades produzidas', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Produção por Linha — Empilhada', color='#1e293b', fontsize=12)
+ax.set_ylabel('Unidades produzidas', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -136,7 +136,7 @@ result = fig
 | Linha 3      | `#fbbf24` |
 | Linha 4      | `#f87171` |
 | Meta         | `#475569` dashed |
-| Fundo figure | `#0f1520` |
-| Fundo eixos  | `#0f1520` |
-| Texto/ticks  | `#64748b` |
-| Título       | `#e2e8f0` |
+| Fundo figure | `white` |
+| Fundo eixos  | `white` |
+| Texto/ticks  | `#334155` |
+| Título       | `#1e293b` |

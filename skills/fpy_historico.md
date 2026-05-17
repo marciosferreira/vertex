@@ -1,4 +1,4 @@
-# skill: fpy_historico
+﻿# skill: fpy_historico
 # descricao: Gráfico de First Pass Yield (FPY) histórico — linha de tendência com área sombreada, meta e anotação do valor médio.
 # palavras-chave: fpy, first pass yield, qualidade, histórico, tendência, gráfico, defeitos, yield
 
@@ -79,12 +79,12 @@ ax.annotate(
     ha='center',
 )
 
-ax.set_title('First Pass Yield — Histórico', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('FPY (%)', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('First Pass Yield — Histórico', color='#1e293b', fontsize=12)
+ax.set_ylabel('FPY (%)', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -110,7 +110,7 @@ result = fig
 | Área sombreada | `#34d399` + `alpha=0.15` |
 | Meta           | `#fbbf24`  |
 | Média          | `#94a3b8`  |
-| Fundo figure   | `#0f1520`  |
-| Fundo eixos    | `#0f1520`  |
-| Texto/ticks    | `#64748b`  |
-| Título/labels  | `#e2e8f0`  |
+| Fundo figure   | `white`  |
+| Fundo eixos    | `white`  |
+| Texto/ticks    | `#334155`  |
+| Título/labels  | `#1e293b`  |

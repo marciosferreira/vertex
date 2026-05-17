@@ -6,7 +6,7 @@
 
 Imagine ter um analista de dados ou cientista de dados disponível a qualquer momento, capaz de acessar os dados reais da operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos.
 
-É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — *"qual linha teve mais paradas esta semana e qual o impacto no OEE?"* — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — *"qual linha teve mais paradas esta semana e qual o impacto no OEE?"* — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela, planilha Excel ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
 
 O que está documentado aqui é como isso foi construído para funcionar de forma robusta em ambiente industrial.
 
@@ -14,7 +14,7 @@ O que está documentado aqui é como isso foi construído para funcionar de form
 
 ## A Arquitetura em uma frase
 
-> Um **orquestrador** que interpreta o pedido em linguagem natural delega para um **sub-agente especialista** que consulta **APIs e banco de dados em tempo real**, analisa os dados em sandbox Python e entrega gráficos, tabelas ou PDFs — tudo transmitido ao vivo via **streaming SSE**, habilitando decisões rápidas e baseadas em informação.
+> Um **orquestrador** que interpreta o pedido em linguagem natural delega para um **sub-agente especialista** que consulta **APIs e banco de dados em tempo real**, analisa os dados em sandbox Python e entrega gráficos, tabelas, planilhas Excel ou PDFs — tudo transmitido ao vivo via **streaming SSE**, habilitando decisões rápidas e baseadas em informação.
 
 ---
 
@@ -27,6 +27,7 @@ Usuário
   └── Orquestrador (LangGraph)
         ├── get_current_datetime()   → responde diretamente
         ├── analisar_grafico()       → dispara o sub-agente
+        ├── gerar_excel()            → exporta DataFrame como planilha .xlsx
         └── gerar_pdf()              → empacota análise em PDF
 
               Sub-agente Analista (sub-grafo separado)
@@ -109,7 +110,7 @@ O desafio aqui é que o sub-agente roda dentro de um `@tool` do orquestrador —
 
 ---
 
-## Gráficos e PDFs como artefatos persistentes
+## Gráficos, PDFs e Excels como artefatos persistentes
 
 Quando o sub-agente gera um gráfico matplotlib, ele não trafega pelo contexto do LLM. O que acontece:
 
@@ -118,7 +119,7 @@ Quando o sub-agente gera um gráfico matplotlib, ele não trafega pelo contexto 
 3. O modelo recebe apenas o token `[chart:3f8a1b...]`
 4. O FastAPI expõe `/chart/{id}` e o frontend renderiza a imagem
 
-O mesmo padrão se aplica a PDFs gerados por `gerar_pdf()`. Os artefatos ficam disponíveis via URL enquanto a sessão estiver ativa — o banco funciona como object storage local.
+O mesmo padrão se aplica a PDFs gerados por `gerar_pdf()` e a planilhas geradas por `gerar_excel()`. Para o Excel, o orquestrador recebe o token `[excel:3f8a1b...]`, que o FastAPI resolve em um link de download `/excel/{id}` — o usuário clica e baixa o `.xlsx` diretamente. Os artefatos ficam disponíveis via URL enquanto a sessão estiver ativa — o banco funciona como object storage local.
 
 ---
 
@@ -134,6 +135,7 @@ A combinação desses elementos resolve os problemas reais de quem quer colocar 
 | "O agente esquece o que foi dito antes" | Checkpointer SQLite persiste histórico por session_id |
 | "Como adiciono novos endpoints sem mexer no agente?" | Basta criar um novo `.md` na pasta de skills |
 | "O modelo fica confuso com muitas APIs ao mesmo tempo" | Lazy-loading de skills — só carrega o que vai usar |
+| "Preciso exportar os dados para o Excel" | `gerar_excel()` cria um `.xlsx` formatado e disponibiliza link de download direto no chat |
 
 ---
 

@@ -1,4 +1,4 @@
-# skill: tendencia_defeitos
+﻿# skill: tendencia_defeitos
 # descricao: Gráfico de tendência de defeitos ao longo do tempo — linha de defeitos diários com regressão linear, média móvel, alertas de piora e projeção futura.
 # palavras-chave: tendência, defeitos, regressão, média móvel, piora, melhora, projeção, defect trend, qualidade, evolução
 
@@ -78,12 +78,12 @@ ax.axhline(media, color='#94a3b8', linestyle=':', linewidth=1, label=f'Média {m
 step = max(1, n // 10)
 ax.set_xticks(x[::step])
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Tendência de Defeitos', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Defeitos / dia', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Tendência de Defeitos', color='#1e293b', fontsize=12)
+ax.set_ylabel('Defeitos / dia', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -111,12 +111,12 @@ x_labels = pd.to_datetime(producao['date']).dt.strftime('%d/%m')
 step = max(1, len(taxa) // 10)
 ax.set_xticks(range(0, len(taxa), step))
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Taxa de Defeitos — Tendência (%)', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Defeitos / Produção (%)', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Taxa de Defeitos — Tendência (%)', color='#1e293b', fontsize=12)
+ax.set_ylabel('Defeitos / Produção (%)', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -157,12 +157,12 @@ ax.plot(range(n - 1, n + n_proj), [trend(n - 1)] + list(y_proj),
 step = max(1, (n + n_proj) // 12)
 ax.set_xticks(x_all[::step])
 ax.set_xticklabels(labels_all[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title(f'Defeitos — Histórico + Projeção {n_proj} dias', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Defeitos / dia', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title(f'Defeitos — Histórico + Projeção {n_proj} dias', color='#1e293b', fontsize=12)
+ax.set_ylabel('Defeitos / dia', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -213,7 +213,7 @@ Inclua na resposta: direção, p-value e R². Exemplo: *"Tendência de alta sign
 | Projeção            | `#fb923c` dashed          |
 | Média geral         | `#94a3b8` dotted          |
 | Marco início proj.  | `#475569` dashed          |
-| Fundo figure        | `#0f1520`                 |
-| Fundo eixos         | `#0f1520`                 |
-| Texto/ticks         | `#64748b`                 |
-| Título              | `#e2e8f0`                 |
+| Fundo figure        | `white`                 |
+| Fundo eixos         | `white`                 |
+| Texto/ticks         | `#334155`                 |
+| Título              | `#1e293b`                 |

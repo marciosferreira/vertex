@@ -26,7 +26,7 @@ import logging
 import os
 import re
 import traceback
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from db import get_db, init_db, LINE_MODEL
+from db import get_db, init_db, shift_dates_to_today, LINE_MODEL
 
 MODEL_LINE = {v: k for k, v in LINE_MODEL.items()}  # "PhoneX Pro" → 1, etc.
 
@@ -168,10 +168,25 @@ async def handler_422(request: Request, exc: Exception):
     )
 
 
+async def _daily_date_shifter():
+    """Background task: waits until next midnight, then shifts DB dates forward by 1 day. Repeats forever."""
+    while True:
+        now = datetime.now()
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        await asyncio.sleep((next_midnight - now).total_seconds())
+        delta = shift_dates_to_today()
+        if delta:
+            logger.info("Date shift automático aplicado: +%d dia(s)", delta)
+
+
 @app.on_event("startup")
-def startup():
+async def startup():
     init_db()
     _init_vertex()
+    delta = shift_dates_to_today()
+    if delta:
+        logger.info("Date shift inicial: +%d dia(s)", delta)
+    asyncio.create_task(_daily_date_shifter())
 
 
 def default_range() -> tuple[str, str]:

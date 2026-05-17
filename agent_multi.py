@@ -624,7 +624,7 @@ def analisar_dataframe(script: str) -> str:
                 buf = io.BytesIO()
                 result.savefig(
                     buf, format="png", dpi=130, bbox_inches="tight",
-                    facecolor="#0f1520", edgecolor="none",
+                    facecolor="white", edgecolor="none",
                 )
                 buf.seek(0)
                 chart_id = chart_store.save_chart(_current_session.get(), buf.getvalue())
@@ -777,7 +777,7 @@ def _build_sub_agent(llm):
         f"## Skills disponíveis\n{catalogo}"
     )
 
-    sub_tools = [read_skill, calcular_periodo, chamar_api, executar_sql, analisar_dataframe]
+    sub_tools = [read_skill, calcular_periodo, chamar_api, executar_sql, analisar_dataframe, gerar_pdf, gerar_excel]
     llm_sub = llm.bind_tools(sub_tools)
     no_sub_tools = ToolNode(sub_tools)
 
@@ -871,7 +871,7 @@ def analisar_grafico(detalhes: str, tipo: str = "grafico") -> str:
     msg_content = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n{detalhes}"
     resultado = _sub_agent_graph.invoke(
         {"messages": [HumanMessage(content=msg_content)]},
-        config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 15},
+        config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 30},
     )
     content = resultado["messages"][-1].content
     if not content or not content.strip():
@@ -895,7 +895,7 @@ def _build_orchestrator(llm, checkpointer=None):
         "Para perguntas simples que não exigem dados, responda diretamente."
     )
 
-    orq_tools = [get_current_datetime, analisar_grafico, gerar_excel, gerar_pdf]
+    orq_tools = [get_current_datetime, analisar_grafico]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 
@@ -966,7 +966,7 @@ def invoke_multi_agent(query: str, session_id: str = "default") -> str:
         _ns_last_access.pop(session_id, None)
     resultado = _orchestrator_graph.invoke(
         {"messages": [HumanMessage(content=query)]},
-        config={"configurable": {"thread_id": session_id}, "recursion_limit": 20},
+        config={"configurable": {"thread_id": session_id}, "recursion_limit": 50},
     )
     return resultado["messages"][-1].content
 
@@ -999,7 +999,7 @@ def stream_multi_agent(query: str, session_id: str = "default"):
     with _eq_lock:
         _event_queues[session_id] = event_queue
 
-    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 20}
+    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 50}
 
     def _run_orchestrator():
         # ContextVar não se propaga para threading.Thread — precisa setar explicitamente.

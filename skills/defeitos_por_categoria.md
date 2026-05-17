@@ -1,4 +1,4 @@
-# skill: defeitos_por_categoria
+﻿# skill: defeitos_por_categoria
 # descricao: Gráfico de defeitos por categoria — Pareto, pizza, série temporal de uma categoria, comparativo por turno ou linha.
 # palavras-chave: defeitos, categoria, pareto, tela, câmera, bateria, placa-mãe, chassi, conector, qualidade, defect, category
 
@@ -82,11 +82,11 @@ bars = ax.bar(x, cnts, color=cores_bar[:len(cats)], width=0.6, alpha=0.9)
 # Valores acima de cada barra
 for bar, val, pct in zip(bars, cnts, pcts):
     ax.text(bar.get_x() + bar.get_width() / 2, val + cnts.max() * 0.01,
-            f'{val}\n({pct:.1f}%)', ha='center', fontsize=8, color='#e2e8f0')
+            f'{val}\n({pct:.1f}%)', ha='center', fontsize=8, color='#1e293b')
 
 # Linha de Pareto acumulado em eixo secundário
 ax2 = ax.twinx()
-ax2.plot(list(x), acum, color='#e2e8f0', linewidth=1.5,
+ax2.plot(list(x), acum, color='#1e293b', linewidth=1.5,
          marker='D', markersize=4, label='Acumulado (%)')
 ax2.axhline(80, color='#475569', linestyle='--', linewidth=1, label='80% (Pareto)')
 ax2.set_ylim(0, 115)
@@ -95,14 +95,14 @@ ax2.tick_params(colors='#94a3b8')
 
 ax.set_xticks(list(x))
 ax.set_xticklabels(cats, rotation=30, ha='right', fontsize=8)
-ax.set_title('Defeitos por Categoria — Pareto', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Quantidade', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
+ax.set_title('Defeitos por Categoria — Pareto', color='#1e293b', fontsize=12)
+ax.set_ylabel('Quantidade', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
 
 lines2, labels2 = ax2.get_legend_handles_labels()
-ax2.legend(lines2, labels2, facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax2.legend(lines2, labels2, facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -122,19 +122,19 @@ fig, ax = plt.subplots(figsize=(7, 5))
 wedges, texts, autotexts = ax.pie(
     cnts, labels=cats, colors=cores[:len(cats)],
     autopct='%1.1f%%', startangle=140,
-    wedgeprops=dict(edgecolor='#0f1520', linewidth=1.5),
+    wedgeprops=dict(edgecolor='white', linewidth=1.5),
     pctdistance=0.78,
 )
 for t in texts:
     t.set_color('#94a3b8')
     t.set_fontsize(8)
 for at in autotexts:
-    at.set_color('#0f1520')
+    at.set_color('white')
     at.set_fontsize(8)
     at.set_fontweight('bold')
 
-ax.set_title('Distribuição de Defeitos por Categoria', color='#e2e8f0', fontsize=12)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Distribuição de Defeitos por Categoria', color='#1e293b', fontsize=12)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -162,12 +162,12 @@ ax.axhline(media, color='#94a3b8', linestyle=':', linewidth=1, label=f'Média {m
 step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_labels[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Defeitos — Tela (display)', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Defeitos / dia', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Defeitos — Tela (display)', color='#1e293b', fontsize=12)
+ax.set_ylabel('Defeitos / dia', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -195,12 +195,12 @@ for i, (df, nome, cor) in enumerate(zip(
 
 ax.set_xticks(list(x))
 ax.set_xticklabels(cats, rotation=30, ha='right', fontsize=8)
-ax.set_title('Defeitos por Categoria — Comparativo por Turno', color='#e2e8f0', fontsize=12)
-ax.set_ylabel('Quantidade', color='#64748b')
-ax.set_facecolor('#0f1520')
-ax.tick_params(colors='#64748b')
-ax.legend(facecolor='#141c27', labelcolor='#e2e8f0', fontsize=8)
-fig.patch.set_facecolor('#0f1520')
+ax.set_title('Defeitos por Categoria — Comparativo por Turno', color='#1e293b', fontsize=12)
+ax.set_ylabel('Quantidade', color='#334155')
+ax.set_facecolor('white')
+ax.tick_params(colors='#334155')
+ax.legend(facecolor='white', labelcolor='#1e293b', fontsize=8)
+fig.patch.set_facecolor('white')
 plt.tight_layout()
 result = fig
 ```
@@ -231,9 +231,9 @@ result = fig
 | Chassi / Carcaça  | `#a78bfa` |
 | Conector USB      | `#fb923c` |
 | Outros            | `#94a3b8` |
-| Linha Pareto      | `#e2e8f0` |
+| Linha Pareto      | `#1e293b` |
 | Marco 80%         | `#475569` dashed |
-| Fundo figure      | `#0f1520` |
-| Fundo eixos       | `#0f1520` |
-| Texto/ticks       | `#64748b` |
-| Título            | `#e2e8f0` |
+| Fundo figure      | `white` |
+| Fundo eixos       | `white` |
+| Texto/ticks       | `#334155` |
+| Título            | `#1e293b` |

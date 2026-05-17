@@ -1,4 +1,4 @@
-# skill: analise_sql_livre
+﻿# skill: analise_sql_livre
 # descricao: Análise ad-hoc via SQL direto no banco — use quando nenhuma outra skill cobrir o pedido. Acesso completo a todas as tabelas.
 # palavras-chave: sql, consulta, ad-hoc, livre, cruzamento, join, correlação, ranking, personalizado, customizado, combinação de tabelas
 
@@ -235,7 +235,7 @@ Atribua à variável `result` o que deve ser exibido (figura, DataFrame ou strin
 
 ## Geração de gráficos
 
-Use `facecolor='#0f1520'` no figure e eixos para manter o tema escuro.
+Use `facecolor='white'` no figure e eixos para manter o tema escuro.
 Cores recomendadas: produzido `#60a5fa`, defeitos `#f87171`, meta `#475569` (dashed),
 FPY/verde `#34d399`, OEE/roxo `#a78bfa`, amarelo `#fbbf24`.
 Sempre use `pd.to_datetime(df['date']).dt.strftime('%d/%m')` no eixo X quando houver coluna `date`.
