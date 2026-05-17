@@ -40,8 +40,8 @@ Nunca tente filtrar turno no DataFrame após o carregamento.
 
 | Coluna             | Tipo  | Descrição                                              |
 |--------------------|-------|--------------------------------------------------------|
-| date               | str   | Data no formato YYYY-MM-DD                             |
-| label              | str   | Rótulo curto do dia (ex: `Dom`, `Seg`, `Ter`)          |
+| date               | str   | Data no formato YYYY-MM-DD — use sempre como eixo X    |
+| label              | str   | Dia da semana abreviado (ex: `Dom`, `Seg`, `Ter`). **NÃO usar como eixo X** — repete a cada 7 dias e causa duplicação de pontos no gráfico |
 | produced           | int   | Unidades produzidas no dia                             |
 | defects            | int   | Unidades com defeito no dia                            |
 | target             | int   | Meta diária de unidades                                |
@@ -112,17 +112,21 @@ O ambiente de execução disponibiliza `plt` (matplotlib.pyplot) e `pd` (pandas)
 Para gerar um gráfico, atribua a figura à variável `result`:
 
 ```python
+# Eixo X: sempre usar 'date' formatado como DD/MM — 'label' repete a cada 7 dias
+x = pd.to_datetime(producao['date']).dt.strftime('%d/%m')
 fig, ax = plt.subplots(figsize=(9, 4))
-ax.bar(producao['label'], producao['produced'], color='#60a5fa', label='Produzido')
-ax.bar(producao['label'], producao['defects'],  color='#f87171', label='Defeitos')
-ax.plot(producao['label'], producao['target'],  color='#475569', linestyle='--', label='Meta')
+ax.bar(x, producao['produced'], color='#60a5fa', label='Produzido')
+ax.bar(x, producao['defects'],  color='#f87171', label='Defeitos')
+ax.plot(x, producao['target'],  color='#475569', linestyle='--', label='Meta')
 ax.set_facecolor('#0f1520')
 ax.tick_params(colors='#64748b')
 ax.legend(facecolor='#141c27', labelcolor='#e2e8f0')
+plt.xticks(rotation=45, ha='right')
 fig.patch.set_facecolor('#0f1520')
 result = fig
 ```
 
+- **Eixo X sempre usa `date` formatado**: `pd.to_datetime(df['date']).dt.strftime('%d/%m')`. Nunca use `label` como eixo X — é dia da semana e se repete a cada 7 dias, causando dois pontos Y por X.
 - Atribuir `result = fig` é suficiente — o sistema salva e exibe o gráfico automaticamente.
 - Use `facecolor='#0f1520'` no figure e nos eixos para manter o tema escuro do dashboard.
 - Cores recomendadas: produzido `#60a5fa`, defeitos `#f87171`, meta `#475569` (dashed),

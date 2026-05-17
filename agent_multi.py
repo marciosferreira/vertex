@@ -176,6 +176,7 @@ _TOOL_LABELS: dict[str, str] = {
     "read_skill":           "📖 Lendo instruções da skill",
     "calcular_periodo":     "📅 Calculando período",
     "chamar_api":           "🌐 Buscando dados da API",
+    "executar_sql":         "🗄️ Consultando banco de dados",
     "analisar_dataframe":   "🔢 Processando e analisando dados",
     "analisar_grafico":     "🔍 Delegando ao sub-agente analista",
     "get_current_datetime": "🕐 Verificando data e hora",
@@ -449,6 +450,52 @@ def chamar_api(url: str, chave: str, params: Optional[dict] = None) -> str:
 
 
 @tool
+def executar_sql(query: str, chave: str) -> str:
+    """Executa uma query SQL SELECT no banco MFG e injeta o resultado como DataFrame no ambiente.
+
+    Use esta tool quando nenhuma outra skill cobrir o pedido — análises ad-hoc que precisam
+    cruzar tabelas (JOIN), rankings, ou qualquer consulta que a API não oferece.
+
+    O DataFrame fica disponível como variável com o nome da chave (ex: chave='resultado'
+    → variável `resultado` no ambiente para uso em analisar_dataframe).
+
+    IMPORTANTE: apenas SELECT é permitido. Qualquer outra instrução será rejeitada.
+    Não use SELECT * — liste apenas as colunas necessárias.
+
+    Args:
+        query: Query SQL SELECT a ser executada (ex: 'SELECT date, SUM(produced) FROM production GROUP BY date').
+        chave: Nome da variável no ambiente onde o DataFrame será armazenado (ex: 'resultado', 'dados').
+    """
+    _tlog("executar_sql", "CHAMADA", query=query, chave=chave)
+
+    # Segurança: apenas SELECT
+    normalized = query.strip().lstrip("(").upper()
+    if not normalized.startswith("SELECT"):
+        msg = "Apenas queries SELECT são permitidas. Instrução rejeitada."
+        _tlog("executar_sql", "RETORNO", status="ERRO", erro=msg)
+        return msg
+
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        ns = _ns_get()
+        ns[chave] = df
+        msg = (
+            f"DataFrame '{chave}' injetado no ambiente: {len(df)} linhas, "
+            f"colunas: {list(df.columns)}."
+        )
+        _tlog("executar_sql", "RETORNO", status="OK", linhas=len(df), colunas=list(df.columns))
+    except Exception as e:
+        msg = f"Erro ao executar SQL: {e}"
+        _tlog("executar_sql", "RETORNO", status="ERRO", erro=msg)
+        return msg
+
+    return msg + _ns_summary(ns)
+
+
+@tool
 def analisar_dataframe(script: str) -> str:
     """Processa e analisa os dados disponíveis no ambiente, retornando o resultado formatado.
 
@@ -604,15 +651,20 @@ def _build_sub_agent(llm):
         "Você é um sub-agente especializado em análise de dados industriais.\n\n"
         "## Fluxo obrigatório\n"
         "Para QUALQUER pedido de análise, siga estes passos nesta ordem:\n"
-        "  1. Chame read_skill() para obter a URL e estrutura dos dados.\n"
-        "  2. Chame calcular_periodo() para obter as datas from/to corretas.\n"
-        "  3. Chame chamar_api() usando os valores retornados por calcular_periodo.\n"
-        "  4. Chame analisar_dataframe() para processar os dados e obter o resultado.\n"
+        "  1. Chame read_skill() para obter as instruções da skill correta.\n"
+        "  2a. Se a skill usa chamar_api: chame calcular_periodo() e depois chamar_api().\n"
+        "  2b. Se a skill usa executar_sql (skill analise_sql_livre): chame executar_sql() diretamente "
+        "com a query SQL adequada — NÃO chame calcular_periodo() nem chamar_api() neste caso.\n"
+        "  3. Chame analisar_dataframe() para processar os dados e obter o resultado.\n"
         "     - Você pode chamar analisar_dataframe() várias vezes para análises em etapas.\n"
         "     - Variáveis criadas em chamadas anteriores de analisar_dataframe continuam disponíveis.\n"
-        "  5. Só então redija a resposta final.\n\n"
+        "  4. Só então redija a resposta final.\n\n"
+        "## Quando usar analise_sql_livre\n"
+        "Se o pedido do usuário não puder ser atendido por nenhuma skill existente "
+        "(cruzamentos entre tabelas, rankings, análises customizadas), use read_skill('analise_sql_livre.md') "
+        "e depois executar_sql() para construir a query SQL adequada.\n\n"
         "## Regras\n"
-        "- NUNCA responda com análises ou números sem antes concluir os passos 1 a 4.\n"
+        "- NUNCA responda com análises ou números sem antes obter os dados via chamar_api ou executar_sql.\n"
         "- NUNCA invente dados — use apenas resultados de analisar_dataframe.\n"
         "- Se analisar_dataframe retornar erro, corrija e chame novamente.\n"
         "- Formate SEMPRE a resposta final em markdown: use tabelas para dados tabulares, "
@@ -630,7 +682,7 @@ def _build_sub_agent(llm):
         f"## Skills disponíveis\n{catalogo}"
     )
 
-    sub_tools = [read_skill, calcular_periodo, chamar_api, analisar_dataframe]
+    sub_tools = [read_skill, calcular_periodo, chamar_api, executar_sql, analisar_dataframe]
     llm_sub = llm.bind_tools(sub_tools)
     no_sub_tools = ToolNode(sub_tools)
 

@@ -35,7 +35,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from db import get_db, init_db
+from db import get_db, init_db, LINE_MODEL
+
+MODEL_LINE = {v: k for k, v in LINE_MODEL.items()}  # "PhoneX Pro" → 1, etc.
 
 try:
     from dotenv import load_dotenv
@@ -154,6 +156,7 @@ def build_filters(
     to_date: Optional[str],
     shift: Optional[str] = None,
     line: Optional[int] = None,
+    model: Optional[str] = None,
     table: str = "t",
 ) -> tuple[str, list]:
     start = from_date or default_range()[0]
@@ -166,6 +169,9 @@ def build_filters(
     if line:
         clause += f" AND {table}.line = ?"
         params.append(line)
+    if model:
+        clause += f" AND {table}.model = ?"
+        params.append(model)
     return clause, params
 
 
@@ -266,17 +272,18 @@ def get_production(
     to_date:   Optional[str] = Query(default=None, alias="to"),
     shift:     Optional[Literal["A", "B", "C"]] = None,
     line:      Optional[int] = None,
+    model:     Optional[str] = None,
 ):
     """
     Produção agregada por dia no período.
-    Filtre por turno e/ou linha para recortes específicos.
+    Filtre por turno, linha e/ou modelo para recortes específicos.
 
     Exemplos:
       /production?from=2026-05-01&to=2026-05-15
       /production?from=2026-05-01&to=2026-05-15&line=1
-      /production?from=2026-05-01&to=2026-05-15&shift=A&line=2
+      /production?from=2026-05-01&to=2026-05-15&shift=A&model=PhoneX+Pro
     """
-    clause, params = build_filters(from_date, to_date, shift, line, table="p")
+    clause, params = build_filters(from_date, to_date, shift, line, model, table="p")
     with get_db() as conn:
         rows = conn.execute(
             f"SELECT date, SUM(produced) as produced, SUM(target) as target "
@@ -290,6 +297,7 @@ def get_production(
 def get_historical_compat(
     range_: str = Query(default="7d", alias="range"),
     shift:     Optional[Literal["A", "B", "C"]] = None,
+    model:     Optional[str] = None,
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
 ):
@@ -297,6 +305,10 @@ def get_historical_compat(
     shift_filter     = "AND p.shift = ?" if shift else ""
     shift_filter_d   = "AND d.shift = ?" if shift else ""
     shift_params     = [shift] if shift else []
+    model_filter     = "AND p.model = ?" if model else ""
+    model_params     = [model] if model else []
+    # defeitos filtrados por linha quando modelo está ativo (defects não tem coluna model)
+    line_filter_d    = f"AND d.line = {MODEL_LINE[model]}" if model else ""
 
     if range_ == "shift":
         with get_db() as conn:
@@ -337,25 +349,36 @@ def get_historical_compat(
 
     with get_db() as conn:
         prod = {r["date"]: dict(r) for r in conn.execute(
-            f"SELECT date, SUM(produced) as produced, SUM(target) as target FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} GROUP BY date",
-            [start, end] + shift_params,
+            f"SELECT date, SUM(produced) as produced, SUM(target) as target FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {model_filter} GROUP BY date",
+            [start, end] + shift_params + model_params,
         ).fetchall()}
         lines = conn.execute(
-            f"SELECT date, line, SUM(produced) as produced FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} GROUP BY date, line",
-            [start, end] + shift_params,
+            f"SELECT date, line, SUM(produced) as produced FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {model_filter} GROUP BY date, line",
+            [start, end] + shift_params + model_params,
         ).fetchall()
         metrics_rows = {r["date"]: dict(r) for r in conn.execute(
             "SELECT * FROM metrics WHERE date BETWEEN ? AND ? ORDER BY date",
             (start, end),
         ).fetchall()}
         def_total = {r["date"]: r["count"] for r in conn.execute(
-            f"SELECT date, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} GROUP BY date",
+            f"SELECT date, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} {line_filter_d} GROUP BY date",
             [start, end] + shift_params,
         ).fetchall()}
         def_cat = conn.execute(
-            f"SELECT date, category, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} GROUP BY date, category",
+            f"SELECT date, category, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} {line_filter_d} GROUP BY date, category",
             [start, end] + shift_params,
         ).fetchall()
+
+        # quando modelo filtrado, eficiência por turno vem da production (produzido/meta×100)
+        # sem filtro de modelo, vem da tabela metrics (factory-wide)
+        eff_by_date: dict = {}
+        if model:
+            for r in conn.execute(
+                f"SELECT date, shift, ROUND(CAST(SUM(produced) AS REAL) / SUM(target) * 100, 1) as eff "
+                f"FROM production p WHERE p.date BETWEEN ? AND ? {model_filter} GROUP BY date, shift",
+                [start, end] + model_params,
+            ).fetchall():
+                eff_by_date.setdefault(r["date"], {})[r["shift"]] = r["eff"]
 
     # organiza produção por linha
     line_by_date: dict = {}
@@ -377,8 +400,18 @@ def get_historical_compat(
         ld = line_by_date.get(d, {})
         dd = def_by_date.get(d, {})
         # FPY e OEE: usa o valor do turno selecionado, ou média dos três
-        fpy = m.get(fpy_key, 0) if fpy_key else round((m.get("fpy_a",0) + m.get("fpy_b",0) + m.get("fpy_c",0)) / 3, 1)
-        oee = m.get(oee_key, 0) if oee_key else round((m.get("oee_a",0) + m.get("oee_b",0) + m.get("oee_c",0)) / 3, 1)
+        if model:
+            p = prod[d]["produced"]
+            d_count = def_total.get(d, 0)
+            fpy = round((p - d_count) / p * 100, 1) if p > 0 else 0
+        else:
+            fpy = m.get(fpy_key, 0) if fpy_key else round((m.get("fpy_a",0) + m.get("fpy_b",0) + m.get("fpy_c",0)) / 3, 1)
+        if model:
+            avail = m.get("availability", 0) / 100
+            perf  = m.get("performance",  0) / 100
+            oee   = round(avail * perf * (fpy / 100) * 100, 1)
+        else:
+            oee = m.get(oee_key, 0) if oee_key else round((m.get("oee_a",0) + m.get("oee_b",0) + m.get("oee_c",0)) / 3, 1)
         result.append({
             "date":  d,
             "label": m.get("label", ""),
@@ -391,9 +424,9 @@ def get_historical_compat(
             "performance":  m.get("performance", 0),
             "line1": ld.get(1, 0), "line2": ld.get(2, 0),
             "line3": ld.get(3, 0), "line4": ld.get(4, 0),
-            "shift_a_efficiency": m.get("shift_a_efficiency", 0) if not shift or shift == "A" else 0,
-            "shift_b_efficiency": m.get("shift_b_efficiency", 0) if not shift or shift == "B" else 0,
-            "shift_c_efficiency": m.get("shift_c_efficiency", 0) if not shift or shift == "C" else 0,
+            "shift_a_efficiency": (eff_by_date.get(d, {}).get("A", 0) if model else m.get("shift_a_efficiency", 0)) if not shift or shift == "A" else 0,
+            "shift_b_efficiency": (eff_by_date.get(d, {}).get("B", 0) if model else m.get("shift_b_efficiency", 0)) if not shift or shift == "B" else 0,
+            "shift_c_efficiency": (eff_by_date.get(d, {}).get("C", 0) if model else m.get("shift_c_efficiency", 0)) if not shift or shift == "C" else 0,
             "defect_screen":  dd.get("Tela (display)", 0),
             "defect_camera":  dd.get("Câmera", 0),
             "defect_battery": dd.get("Bateria", 0),
@@ -407,34 +440,62 @@ def get_hourly_production(
     shift:     Literal["A", "B", "C"] = "A",
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
+    model:     Optional[str] = None,
 ):
     """
     Média e desvio padrão de produção por hora do turno no período.
-    Sem from/to: últimos 7 dias.
+    Sem from/to: últimos 7 dias. Filtre por modelo para ver uma linha específica.
 
     Exemplos:
       /production/hourly?shift=A
-      /production/hourly?shift=B&from=2026-05-01&to=2026-05-15
+      /production/hourly?shift=B&from=2026-05-01&to=2026-05-15&model=PhoneX+Pro
     """
     start = from_date or default_range()[0]
     end   = to_date   or default_range()[1]
     with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                hour,
-                ROUND(AVG(produced), 1)  AS avg_produced,
-                ROUND(SQRT(MAX(0.0, AVG(produced * produced) - AVG(produced) * AVG(produced))), 1) AS stddev_produced,
-                ROUND(AVG(defects), 1)   AS avg_defects,
-                ROUND(SQRT(MAX(0.0, AVG(defects * defects) - AVG(defects) * AVG(defects))), 1)    AS stddev_defects,
-                ROUND(AVG(target), 0)    AS avg_target
-            FROM hourly_production
-            WHERE shift = ? AND date BETWEEN ? AND ?
-            GROUP BY hour
-            ORDER BY MIN(id)
-            """,
-            (shift, start, end),
-        ).fetchall()
+        if model:
+            # Filtra uma linha: AVG direto por hora
+            rows = conn.execute(
+                """
+                SELECT
+                    hour,
+                    ROUND(AVG(produced), 1)  AS avg_produced,
+                    ROUND(SQRT(MAX(0.0, AVG(produced*produced) - AVG(produced)*AVG(produced))), 1) AS stddev_produced,
+                    ROUND(AVG(defects), 1)   AS avg_defects,
+                    ROUND(SQRT(MAX(0.0, AVG(defects*defects) - AVG(defects)*AVG(defects))), 1)    AS stddev_defects,
+                    ROUND(AVG(target), 0)    AS avg_target
+                FROM hourly_production
+                WHERE shift = ? AND date BETWEEN ? AND ? AND model = ?
+                GROUP BY hour
+                ORDER BY MIN(id)
+                """,
+                (shift, start, end, model),
+            ).fetchall()
+        else:
+            # Sem modelo: soma todas as linhas por (date, hour), depois AVG entre dias
+            rows = conn.execute(
+                """
+                SELECT
+                    hour,
+                    ROUND(AVG(day_prod), 1)  AS avg_produced,
+                    ROUND(SQRT(MAX(0.0, AVG(day_prod*day_prod) - AVG(day_prod)*AVG(day_prod))), 1) AS stddev_produced,
+                    ROUND(AVG(day_def), 1)   AS avg_defects,
+                    ROUND(SQRT(MAX(0.0, AVG(day_def*day_def) - AVG(day_def)*AVG(day_def))), 1)    AS stddev_defects,
+                    ROUND(AVG(day_tgt), 0)   AS avg_target
+                FROM (
+                    SELECT date, hour, MIN(id) AS min_id,
+                        SUM(produced) AS day_prod,
+                        SUM(defects)  AS day_def,
+                        SUM(target)   AS day_tgt
+                    FROM hourly_production
+                    WHERE shift = ? AND date BETWEEN ? AND ?
+                    GROUP BY date, hour
+                )
+                GROUP BY hour
+                ORDER BY MIN(min_id)
+                """,
+                (shift, start, end),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -447,6 +508,7 @@ def get_defects(
     shift:     Optional[Literal["A", "B", "C"]] = None,
     line:      Optional[int] = None,
     category:  Optional[str] = None,
+    model:     Optional[str] = None,
 ):
     """
     Sem `category`: retorna defeitos agregados por categoria no período.
@@ -455,9 +517,10 @@ def get_defects(
     Exemplos:
       /defects?from=2026-05-01&to=2026-05-15&line=1
       /defects?from=2026-05-01&to=2026-05-15&category=Tela (display)
-      /defects?from=2026-05-01&to=2026-05-15&shift=A&line=2&category=Câmera
+      /defects?from=2026-05-01&to=2026-05-15&shift=A&model=PhoneX+Pro
     """
-    clause, params = build_filters(from_date, to_date, shift, line, table="d")
+    effective_line = MODEL_LINE.get(model) if model else line
+    clause, params = build_filters(from_date, to_date, shift, effective_line, table="d")
 
     if category:
         with get_db() as conn:
@@ -525,6 +588,7 @@ def get_kpis(
     shift:     Literal["A", "B", "C"] = "A",
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
+    model:     Optional[str] = None,
 ):
     """
     KPIs calculados dinamicamente para o período selecionado.
@@ -532,12 +596,16 @@ def get_kpis(
     """
     start = from_date or date.today().isoformat()
     end   = to_date   or date.today().isoformat()
+    model_clause  = "AND model = ?" if model else ""
+    model_params  = [model] if model else []
+    line_clause   = "AND line = ?" if model else ""
+    line_params   = [MODEL_LINE[model]] if model else []
 
     with get_db() as conn:
         prod = conn.execute(
-            "SELECT SUM(produced) as produced, SUM(target) as target "
-            "FROM production WHERE shift = ? AND date BETWEEN ? AND ?",
-            (shift, start, end),
+            f"SELECT SUM(produced) as produced, SUM(target) as target "
+            f"FROM production WHERE shift = ? AND date BETWEEN ? AND ? {model_clause}",
+            [shift, start, end] + model_params,
         ).fetchone()
 
         fpy_col = f"fpy_{shift.lower()}"
@@ -555,8 +623,8 @@ def get_kpis(
         ).fetchone()
 
         def_total = conn.execute(
-            "SELECT SUM(count) as count FROM defects WHERE shift = ? AND date BETWEEN ? AND ?",
-            (shift, start, end),
+            f"SELECT SUM(count) as count FROM defects WHERE shift = ? AND date BETWEEN ? AND ? {line_clause}",
+            [shift, start, end] + line_params,
         ).fetchone()
 
         # downtime e rework não têm série temporal — usa snapshot como referência por dia

@@ -157,7 +157,7 @@
 
   .chat-sidebar {
     position:fixed; right:0; top:58px; bottom:0; width:340px;
-    background:#131929; border-left:2px solid var(--cyan);
+    background:#c8cdd6; border-left:2px solid var(--cyan);
     display:flex; flex-direction:column; z-index:200;
     min-width:260px;
   }
@@ -189,16 +189,16 @@
 
   .chat-head {
     padding:10px 14px 10px 18px; flex-shrink:0;
-    background:#0c1525; border-bottom:1px solid rgba(56,189,248,.25);
+    background:#b8bdc8; border-bottom:1px solid rgba(56,189,248,.35);
     display:flex; flex-direction:column; justify-content:center; gap:4px;
   }
   .chat-head-title {
     font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
     letter-spacing:.12em; color:var(--cyan); display:flex; align-items:center; gap:7px;
   }
-  .chat-head-sub { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); letter-spacing:.08em; }
+  .chat-head-sub { font-family:'JetBrains Mono',monospace; font-size:9px; color:#111; font-weight:700; letter-spacing:.08em; }
   .chat-collapse-btn {
-    background:none; border:1px solid var(--border); color:var(--txt2);
+    background:none; border:1px solid #ccc; color:#555;
     font-size:11px; font-family:'JetBrains Mono',monospace; padding:1px 6px;
     cursor:pointer; line-height:1.4; transition:all .15s; flex-shrink:0;
   }
@@ -221,41 +221,41 @@
   .msg-bubble li { margin-bottom:2px; }
   .msg-bubble strong { font-weight:600; }
   .msg-bubble em { font-style:italic; }
-  .msg-bubble code { font-family:'JetBrains Mono',monospace; font-size:11px; background:rgba(255,255,255,.06); padding:1px 4px; border-radius:3px; }
-  .msg-bubble pre { background:rgba(0,0,0,.3); border:1px solid var(--border); border-radius:5px; padding:8px 10px; overflow-x:auto; margin:6px 0; }
+  .msg-bubble code { font-family:'JetBrains Mono',monospace; font-size:11px; background:rgba(0,0,0,.06); padding:1px 4px; border-radius:3px; }
+  .msg-bubble pre { background:rgba(0,0,0,.05); border:1px solid #ddd; border-radius:5px; padding:8px 10px; overflow-x:auto; margin:6px 0; }
   .msg-bubble pre code { background:none; padding:0; font-size:11px; }
   .msg-bubble table { border-collapse:collapse; font-size:11px; width:100%; margin:6px 0; }
-  .msg-bubble th { background:rgba(255,255,255,.06); font-weight:600; text-align:left; padding:4px 8px; border:1px solid var(--border); }
-  .msg-bubble td { padding:3px 8px; border:1px solid var(--border); }
-  .msg-bubble tr:nth-child(even) td { background:rgba(255,255,255,.02); }
+  .msg-bubble th { background:rgba(0,0,0,.05); font-weight:600; text-align:left; padding:4px 8px; border:1px solid #ddd; }
+  .msg-bubble td { padding:3px 8px; border:1px solid #ddd; }
+  .msg-bubble tr:nth-child(even) td { background:rgba(0,0,0,.02); }
   .msg-bubble h1,.msg-bubble h2,.msg-bubble h3 { font-size:13px; font-weight:600; margin:8px 0 4px; }
   .msg-bubble blockquote { border-left:3px solid var(--border); margin:4px 0; padding-left:8px; color:var(--txt2); }
   .msg-bubble img { max-width:100%; border:1px solid var(--border); border-radius:3px; margin:8px 0; display:block; }
   .msg-bubble a { color:var(--cyan); text-decoration:none; border-bottom:1px solid rgba(56,189,248,.3); }
   .msg-bubble a:hover { border-bottom-color:var(--cyan); }
   .chat-msg.user .msg-bubble {
-    background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.2); color:var(--txt);
+    background:rgba(56,189,248,.2); border:1px solid rgba(56,189,248,.5); color:#1a2540;
   }
   .chat-msg.assistant .msg-bubble {
-    background:#1a2540; border:1px solid rgba(56,189,248,.15); color:var(--txt);
+    background:#ffffff; border:1px solid #b0b8c8; color:#1a2540;
   }
   .chat-msg.error .msg-bubble {
-    background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.2); color:var(--red);
+    background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.3); color:#c0392b;
   }
-  .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); margin-top:3px; padding:0 3px; }
+  .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:#999; margin-top:3px; padding:0 3px; }
 
   .chat-input-wrap {
-    padding:12px; border-top:1px solid rgba(56,189,248,.2);
+    padding:12px; border-top:1px solid rgba(56,189,248,.25); background:#b8bdc8;
     display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
   }
   .chat-input {
-    flex:1; background:#0c1525; border:1px solid rgba(56,189,248,.2);
-    color:var(--txt); font-family:'Inter',sans-serif; font-size:12px;
+    flex:1; background:#ffffff; border:1px solid #a8b0c0;
+    color:#1a2540; font-family:'Inter',sans-serif; font-size:12px;
     padding:8px 10px; resize:none; outline:none; line-height:1.5;
     max-height:120px; overflow-y:auto;
   }
-  .chat-input:focus { border-color:rgba(56,189,248,.35); }
-  .chat-input::placeholder { color:var(--txt3); }
+  .chat-input:focus { border-color:rgba(56,189,248,.6); }
+  .chat-input::placeholder { color:#aaa; }
   .chat-send {
     width:34px; height:34px; flex-shrink:0; background:var(--cyan); border:none;
     color:#0a0e14; font-size:18px; font-weight:700; cursor:pointer;
@@ -291,7 +291,7 @@
     padding:6px 9px; color:var(--txt2); line-height:1.6;
     border-top:1px solid rgba(56,189,248,.08); word-break:break-word;
   }
-  .thinking-live.is-tool { color:var(--yellow); }
+  .thinking-live.is-tool { color:#5b8fb9; }
   .thinking-cursor {
     display:inline-block; width:5px; height:11px; background:var(--cyan);
     margin-left:3px; vertical-align:middle;
@@ -306,7 +306,54 @@
   }
   .thinking-step:last-child { border-bottom:none; }
   .thinking-step-n { color:var(--txt3); margin-right:5px; opacity:.6; }
-  .thinking-step.is-tool { color:var(--yellow); }
+  .thinking-step.is-tool { color:#5b8fb9; }
+
+  /* CHART MODAL */
+  .chart-modal-overlay {
+    position:fixed; inset:0; z-index:600;
+    background:rgba(0,0,0,.88); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .chart-modal-overlay.hidden { display:none; }
+  .chart-modal-box {
+    position:relative; background:var(--panel);
+    border:1px solid var(--border);
+    padding:16px 18px 14px;
+    width:92vw; height:84vh; max-width:1440px;
+    display:flex; flex-direction:column;
+    cursor:default; animation:fadeUp .18s ease both;
+  }
+  .chart-modal-header {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:12px; flex-shrink:0;
+  }
+  .chart-modal-title {
+    font-family:'JetBrains Mono',monospace; font-size:11px;
+    color:var(--txt2); letter-spacing:.14em; text-transform:uppercase;
+    display:flex; align-items:center; gap:7px;
+  }
+  .chart-modal-hint {
+    font-size:9px; color:var(--txt3); letter-spacing:.06em; font-weight:400;
+  }
+  .chart-modal-close {
+    background:none; border:1px solid var(--border); color:var(--txt2);
+    font-size:13px; cursor:pointer; padding:2px 10px;
+    font-family:'JetBrains Mono',monospace; transition:all .15s;
+  }
+  .chart-modal-close:hover { border-color:var(--red); color:var(--red); }
+  .chart-modal-body {
+    flex:1; position:relative; min-height:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .chart-modal-body img {
+    max-width:100%; max-height:100%; object-fit:contain; display:block;
+    border:none !important; margin:0 !important;
+  }
+
+  /* clickable cursors */
+  .ch-wrap canvas { cursor:zoom-in; }
+  .msg-bubble img { cursor:zoom-in !important; }
 </style>
 </head>
 <body>
@@ -367,6 +414,13 @@
         <option value="B">Turno B</option>
         <option value="C">Turno C</option>
       </select>
+      <select class="cf-sel" id="kpiModelSel" onchange="refreshKPIs()">
+        <option value="all">Todos os modelos</option>
+        <option value="PhoneX Pro">PhoneX Pro</option>
+        <option value="PhoneX Lite">PhoneX Lite</option>
+        <option value="PhoneX Ultra">PhoneX Ultra</option>
+        <option value="PhoneX Mini">PhoneX Mini</option>
+      </select>
     </div>
   </div>
   <div class="kpi-row" id="kpiRow"></div>
@@ -387,6 +441,13 @@
             <option value="A">Turno A</option>
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
+          </select>
+          <select class="cf-sel" id="prodModelSel" onchange="refreshProd()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
           </select>
         </div>
       </div>
@@ -414,6 +475,13 @@
             <option value="A">Turno A</option>
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
+          </select>
+          <select class="cf-sel" id="fpyModelSel" onchange="refreshFpy()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
           </select>
         </div>
       </div>
@@ -449,10 +517,10 @@
         </div>
         <div class="card-body">
           <div class="legend">
-            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Linha 1</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Linha 2</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(251,191,36,.8)"></div>Linha 3</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Linha 4</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Linha 1 — PhoneX Pro</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Linha 2 — PhoneX Lite</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(251,191,36,.8)"></div>Linha 3 — PhoneX Ultra</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Linha 4 — PhoneX Mini</div>
           </div>
           <div class="ch-wrap" style="height:200px"><canvas id="lineCompChart"></canvas></div>
         </div>
@@ -472,6 +540,13 @@
               <option value="A">Turno A</option>
               <option value="B">Turno B</option>
               <option value="C">Turno C</option>
+            </select>
+            <select class="cf-sel" id="oeeModelSel" onchange="refreshOee()">
+              <option value="all">Todos os modelos</option>
+              <option value="PhoneX Pro">PhoneX Pro</option>
+              <option value="PhoneX Lite">PhoneX Lite</option>
+              <option value="PhoneX Ultra">PhoneX Ultra</option>
+              <option value="PhoneX Mini">PhoneX Mini</option>
             </select>
           </div>
         </div>
@@ -512,6 +587,13 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
+          <select class="cf-sel" id="hourModelSel" onchange="refreshHour()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
+          </select>
         </div>
       </div>
       <div class="card-body">
@@ -532,6 +614,13 @@
             <option value="14d">14 dias</option>
             <option value="30d">30 dias</option>
             <option value="today">Hoje</option>
+          </select>
+          <select class="cf-sel" id="shiftModelSel" onchange="refreshShiftEff()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
           </select>
         </div>
       </div>
@@ -563,6 +652,13 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
+          <select class="cf-sel" id="defCatModelSel" onchange="refreshDefCat()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
+          </select>
         </div>
       </div>
       <div class="card-body">
@@ -584,6 +680,13 @@
             <option value="A">Turno A</option>
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
+          </select>
+          <select class="cf-sel" id="defTrendModelSel" onchange="refreshDefTrend()">
+            <option value="all">Todos os modelos</option>
+            <option value="PhoneX Pro">PhoneX Pro</option>
+            <option value="PhoneX Lite">PhoneX Lite</option>
+            <option value="PhoneX Ultra">PhoneX Ultra</option>
+            <option value="PhoneX Mini">PhoneX Mini</option>
           </select>
         </div>
       </div>
@@ -613,7 +716,7 @@
       <button class="chat-collapse-btn" onclick="closeChat()" title="Fechar chat">✕</button>
     </div>
     <div class="chat-head-sub" style="display:flex;align-items:center;justify-content:space-between;">
-      <span>Pergunte sobre os dados em linguagem natural</span>
+      <span>Pergunte sobre os dados, solicite gráficos, análises estatistica ou relatórios.</span>
       <button onclick="newChat()" title="Nova conversa" style="background:none;border:1px solid var(--border);color:var(--txt2);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:.06em;padding:2px 7px;cursor:pointer;">+ NOVA</button>
     </div>
   </div>
@@ -625,6 +728,20 @@
     <button class="chat-send" id="chatSendBtn" onclick="sendChat()">↑</button>
   </div>
 </aside>
+
+<!-- Chart Modal -->
+<div class="chart-modal-overlay hidden" id="chartModal" onclick="closeChartModal(event)">
+  <div class="chart-modal-box" id="chartModalBox">
+    <div class="chart-modal-header">
+      <div class="chart-modal-title">
+        <span id="chartModalTitle">Gráfico</span>
+        <span class="chart-modal-hint">ESC ou clique fora para fechar</span>
+      </div>
+      <button class="chart-modal-close" onclick="closeChartModal(null,true)">✕ FECHAR</button>
+    </div>
+    <div class="chart-modal-body" id="chartModalBody"></div>
+  </div>
+</div>
 
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -721,9 +838,10 @@ const errorBarPlugin = {
 };
 
 // SHARED HISTORICAL FETCH
-async function fetchHistorical(range, shift) {
+async function fetchHistorical(range, shift, model = 'all') {
   const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
-  return api(`/production/historical?${rangeToDates(range)}${shiftParam}`);
+  const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
+  return api(`/production/historical?${rangeToDates(range)}${shiftParam}${modelParam}`);
 }
 
 // ── PER-CHART REFRESH FUNCTIONS ────────────────────────
@@ -732,7 +850,9 @@ async function refreshKPIs() {
   try {
     const range = sel('kpiRangeSel');
     const shift = sel('kpiShiftSel');
-    const k = await api(`/kpis?shift=${shift}&${rangeToDates(range)}`);
+    const model = sel('kpiModelSel');
+    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
+    const k = await api(`/kpis?shift=${shift}&${rangeToDates(range)}${modelParam}`);
     const pct = Math.round(k.total_produced / k.daily_target * 100);
     const rangeLabel = { '7d':'(7 dias)', '14d':'(14 dias)', '30d':'(30 dias)', 'today':'hoje' }[range];
     const kpis = [
@@ -753,7 +873,7 @@ async function refreshKPIs() {
 
 async function refreshProd() {
   try {
-    const h = await fetchHistorical(sel('prodRangeSel'), sel('prodShiftSel'));
+    const h = await fetchHistorical(sel('prodRangeSel'), sel('prodShiftSel'), sel('prodModelSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('prodChart', {
@@ -772,7 +892,7 @@ async function refreshProd() {
 
 async function refreshFpy() {
   try {
-    const h = await fetchHistorical(sel('fpyRangeSel'), sel('fpyShiftSel'));
+    const h = await fetchHistorical(sel('fpyRangeSel'), sel('fpyShiftSel'), sel('fpyModelSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('fpyChart', {
@@ -796,10 +916,10 @@ async function refreshLineComp() {
     mkChart('lineCompChart', {
       type:'bar',
       data: { labels, datasets: [
-        { label:'Linha 1', data: h.map(d=>d.line1), backgroundColor:'rgba(96,165,250,.75)', borderRadius:2 },
-        { label:'Linha 2', data: h.map(d=>d.line2), backgroundColor:'rgba(52,211,153,.75)', borderRadius:2 },
-        { label:'Linha 3', data: h.map(d=>d.line3), backgroundColor:'rgba(251,191,36,.75)', borderRadius:2 },
-        { label:'Linha 4', data: h.map(d=>d.line4), backgroundColor:'rgba(167,139,250,.75)', borderRadius:2 },
+        { label:'Linha 1 — PhoneX Pro',   data: h.map(d=>d.line1), backgroundColor:'rgba(96,165,250,.75)', borderRadius:2 },
+        { label:'Linha 2 — PhoneX Lite',  data: h.map(d=>d.line2), backgroundColor:'rgba(52,211,153,.75)', borderRadius:2 },
+        { label:'Linha 3 — PhoneX Ultra', data: h.map(d=>d.line3), backgroundColor:'rgba(251,191,36,.75)', borderRadius:2 },
+        { label:'Linha 4 — PhoneX Mini',  data: h.map(d=>d.line4), backgroundColor:'rgba(167,139,250,.75)', borderRadius:2 },
       ]},
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
         scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY() }
@@ -810,7 +930,7 @@ async function refreshLineComp() {
 
 async function refreshOee() {
   try {
-    const h = await fetchHistorical(sel('oeeRangeSel'), sel('oeeShiftSel'));
+    const h = await fetchHistorical(sel('oeeRangeSel'), sel('oeeShiftSel'), sel('oeeModelSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('oeeChart', {
@@ -829,7 +949,7 @@ async function refreshOee() {
 
 async function refreshShiftEff() {
   try {
-    const h = await fetchHistorical(sel('shiftRangeSel'), 'all');
+    const h = await fetchHistorical(sel('shiftRangeSel'), 'all', sel('shiftModelSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('shiftChart', {
@@ -850,7 +970,9 @@ async function refreshHour() {
   try {
     const shift = sel('hourShiftSel');
     const range = sel('hourRangeSel');
-    const hr = await api(`/production/hourly?shift=${shift}&${rangeToDates(range)}`);
+    const model = sel('hourModelSel');
+    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
+    const hr = await api(`/production/hourly?shift=${shift}&${rangeToDates(range)}${modelParam}`);
     const labels = hr.map(h => h.hour);
     if (charts['hourChart']) charts['hourChart'].destroy();
     charts['hourChart'] = new Chart(document.getElementById('hourChart'), {
@@ -892,7 +1014,9 @@ async function refreshDefCat() {
     const range = sel('defCatRangeSel');
     const shift = sel('defCatShiftSel');
     const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
-    const dc = await api(`/defects?${rangeToDates(range)}${shiftParam}`);
+    const model = sel('defCatModelSel');
+    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
+    const dc = await api(`/defects?${rangeToDates(range)}${shiftParam}${modelParam}`);
     mkChart('defChart', {
       type:'bar',
       data:{ labels: dc.map(d=>d.category), datasets:[{
@@ -913,7 +1037,7 @@ async function refreshDefCat() {
 
 async function refreshDefTrend() {
   try {
-    const h = await fetchHistorical(sel('defTrendRangeSel'), sel('defTrendShiftSel'));
+    const h = await fetchHistorical(sel('defTrendRangeSel'), sel('defTrendShiftSel'), sel('defTrendModelSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('defTrendChart', {
@@ -1008,7 +1132,7 @@ async function initDashboard() {
 let _sessionId = crypto.randomUUID();
 let _msgId = 0;
 
-const _welcomeMsg = 'Olá! Pergunte qualquer coisa sobre a produção, defeitos ou indicadores do dashboard.';
+const _welcomeMsg = 'Olá! Como posso te ajudar hoje?';
 
 function newChat() {
   _sessionId = crypto.randomUUID();
@@ -1200,6 +1324,48 @@ marked.use({
     postprocess(html) {
       return html.replace(/<a href="/g, '<a target="_blank" rel="noopener" href="');
     }
+  }
+});
+
+// ── CHART MODAL ───────────────────────────────────────
+function openChartModal(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const imgData = canvas.toDataURL('image/png');
+  const cardHead = canvas.closest('.card')?.querySelector('.card-title');
+  const title = cardHead ? cardHead.textContent.trim() : 'Gráfico';
+  document.getElementById('chartModalTitle').textContent = title;
+  document.getElementById('chartModalBody').innerHTML =
+    `<img src="${imgData}" alt="${title}" draggable="false">`;
+  document.getElementById('chartModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function openImgModal(src, alt) {
+  document.getElementById('chartModalTitle').textContent = alt || 'Análise';
+  document.getElementById('chartModalBody').innerHTML =
+    `<img src="${src}" alt="${alt || ''}" draggable="false">`;
+  document.getElementById('chartModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeChartModal(e, force) {
+  if (!force && e && document.getElementById('chartModalBox').contains(e.target)) return;
+  document.getElementById('chartModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeChartModal(null, true);
+});
+
+document.addEventListener('click', e => {
+  if (e.target.tagName === 'CANVAS' && e.target.closest('.ch-wrap')) {
+    openChartModal(e.target.id);
+    return;
+  }
+  if (e.target.tagName === 'IMG' && e.target.closest('.msg-bubble')) {
+    openImgModal(e.target.src, e.target.alt);
   }
 });
 

@@ -7,6 +7,14 @@ DB_PATH = Path(__file__).parent / "mfg.db"
 
 DAY_NAMES = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
+# Modelo produzido por linha (fixo por linha)
+LINE_MODEL = {
+    1: "PhoneX Pro",
+    2: "PhoneX Lite",
+    3: "PhoneX Ultra",
+    4: "PhoneX Mini",
+}
+
 # Base diária por linha de produção (7 dias ciclando)
 BASE_LINE = {
     1: [1050, 1180, 1120, 1250, 1124, 1090,  980],
@@ -17,6 +25,15 @@ BASE_LINE = {
 
 # Fração da produção diária por turno
 SHIFT_FRACTIONS = {"A": 0.385, "B": 0.338, "C": 0.277}
+
+# Target diário por linha calibrado para eficiência ~90% na média
+# = round(media_diaria_base / 0.90)
+LINE_DAILY_TARGET = {
+    1: round(sum([1050, 1180, 1120, 1250, 1124, 1090,  980]) / 7 / 0.90),  # ≈ 1237
+    2: round(sum([ 920,  970,  890, 1020,  987,  940,  880]) / 7 / 0.90),  # ≈ 1049
+    3: round(sum([ 880,  950,  820,  960,  743,  720,  810]) / 7 / 0.90),  # ≈  934
+    4: round(sum([ 870, 1000, 1120, 1080,  993,  940,  920]) / 7 / 0.90),  # ≈ 1099
+}
 
 # Base de defeitos por turno e categoria (valor diário total)
 BASE_DEFECTS = {
@@ -60,18 +77,20 @@ def get_db():
 def init_db():
     with get_db() as conn:
         conn.executescript("""
-            -- Produção granular: uma linha por (data, turno, linha)
+            -- Produção granular: uma linha por (data, turno, linha, modelo)
             CREATE TABLE IF NOT EXISTS production (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 date     TEXT    NOT NULL,
                 shift    TEXT    NOT NULL,   -- A | B | C
                 line     INTEGER NOT NULL,   -- 1 | 2 | 3 | 4
+                model    TEXT    NOT NULL,   -- PhoneX Pro | PhoneX Lite | PhoneX Ultra | PhoneX Mini
                 produced INTEGER NOT NULL,
                 target   INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_production_date  ON production(date);
             CREATE INDEX IF NOT EXISTS idx_production_shift ON production(shift);
             CREATE INDEX IF NOT EXISTS idx_production_line  ON production(line);
+            CREATE INDEX IF NOT EXISTS idx_production_model ON production(model);
 
             -- Defeitos granulares: uma linha por (data, turno, linha, categoria)
             CREATE TABLE IF NOT EXISTS defects (
@@ -143,11 +162,13 @@ def init_db():
                 oee                REAL
             );
 
-            -- Produção hora a hora com dimensão temporal
+            -- Produção hora a hora por linha e modelo
             CREATE TABLE IF NOT EXISTS hourly_production (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 date     TEXT    NOT NULL,
                 shift    TEXT    NOT NULL,
+                line     INTEGER NOT NULL,
+                model    TEXT    NOT NULL,
                 hour     TEXT    NOT NULL,
                 produced INTEGER NOT NULL,
                 target   INTEGER NOT NULL,
@@ -155,18 +176,7 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_hourly_date  ON hourly_production(date);
             CREATE INDEX IF NOT EXISTS idx_hourly_shift ON hourly_production(shift);
-
-            -- Média e desvio padrão de produção por turno/hora (todos os dias)
-            CREATE VIEW IF NOT EXISTS hourly_stats AS
-            SELECT
-                shift,
-                hour,
-                AVG(produced)  AS avg_produced,
-                SQRT(MAX(0.0, AVG(produced * produced) - AVG(produced) * AVG(produced))) AS stddev_produced,
-                AVG(defects)   AS avg_defects,
-                AVG(target)    AS avg_target
-            FROM hourly_production
-            GROUP BY shift, hour;
+            CREATE INDEX IF NOT EXISTS idx_hourly_model ON hourly_production(model);
         """)
         _seed(conn)
         conn.commit()
@@ -186,9 +196,10 @@ def _seed(conn: sqlite3.Connection):
         for line, base_values in BASE_LINE.items():
             daily_line = round(base_values[days_ago % 7] * v)
             for shift, frac in SHIFT_FRACTIONS.items():
-                prod_rows.append((d.isoformat(), shift, line, round(daily_line * frac), 400))
+                line_target = round(LINE_DAILY_TARGET[line] * frac)
+                prod_rows.append((d.isoformat(), shift, line, LINE_MODEL[line], round(daily_line * frac), line_target))
     conn.executemany(
-        "INSERT INTO production (date,shift,line,produced,target) VALUES (?,?,?,?,?)",
+        "INSERT INTO production (date,shift,line,model,produced,target) VALUES (?,?,?,?,?,?)",
         prod_rows,
     )
 
@@ -263,6 +274,8 @@ def _seed(conn: sqlite3.Connection):
     # perfil intradiário base: começo de turno mais lento, pico no meio, queda no final
     BASE_HOURLY_PROD = [312, 389, 401, 376, 420, 398, 290, 415]
     BASE_HOURLY_DEF  = [8,   6,   11,  9,   7,   12,  5,   8]
+    # participação de cada linha na produção/defeitos horários (proporcional à capacidade)
+    LINE_HOURLY_SHARE = {1: 0.29, 2: 0.26, 3: 0.20, 4: 0.25}
 
     hourly_rows = []
     for days_ago in range(89, -1, -1):
@@ -271,14 +284,19 @@ def _seed(conn: sqlite3.Connection):
         for shift, hours in HOURLY_HOURS.items():
             m = SHIFT_MULT[shift]
             for i, h in enumerate(hours):
-                # variação por hora usando índice diferente do dia para quebrar correlação
                 hour_v = VARIATION[(days_ago + i * 3) % len(VARIATION)]
-                # 70% variação do dia + 30% variação específica da hora
                 v = day_v * 0.7 + hour_v * 0.3
-                prod = max(0, round(BASE_HOURLY_PROD[i] * m * v))
-                defects = max(0, round(BASE_HOURLY_DEF[i] * (1 / m if m < 1 else 1) * v))
-                hourly_rows.append((d.isoformat(), shift, h, prod, 400, defects))
+                total_prod    = max(0, round(BASE_HOURLY_PROD[i] * m * v))
+                total_defects = max(0, round(BASE_HOURLY_DEF[i] * (1 / m if m < 1 else 1) * v))
+                for line, share in LINE_HOURLY_SHARE.items():
+                    hourly_target = round(LINE_DAILY_TARGET[line] * SHIFT_FRACTIONS[shift] / 8)
+                    hourly_rows.append((
+                        d.isoformat(), shift, line, LINE_MODEL[line], h,
+                        max(0, round(total_prod * share)),
+                        hourly_target,
+                        max(0, round(total_defects * share)),
+                    ))
     conn.executemany(
-        "INSERT INTO hourly_production (date,shift,hour,produced,target,defects) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO hourly_production (date,shift,line,model,hour,produced,target,defects) VALUES (?,?,?,?,?,?,?,?)",
         hourly_rows,
     )
