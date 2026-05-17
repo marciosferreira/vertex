@@ -45,9 +45,10 @@ import chart_store
 
 logger = logging.getLogger(__name__)
 
+from db import DB_PATH
+
 SKILLS_FOLDER = Path(__file__).parent / "skills"
 SKILL_HEADER_LINES = 4
-DB_PATH = Path(__file__).parent / "mfg.db"
 
 _orchestrator_graph = None
 _sub_agent_graph = None

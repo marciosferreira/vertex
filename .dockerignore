@@ -1,0 +1,29 @@
+# Credenciais e ambiente local
+.env
+credentials.json
+
+# Banco local
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Debug exports
+debug_*.xlsx
+
+# IDEs e OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore

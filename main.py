@@ -77,15 +77,34 @@ def _embed_charts(text: str) -> str:
     return text
 
 
+def _resolve_credentials() -> None:
+    """Resolve credenciais Google a partir de env var (base64) ou arquivo local."""
+    import base64
+    import tempfile
+
+    b64 = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if b64:
+        json_bytes = base64.b64decode(b64)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        tmp.write(json_bytes)
+        tmp.flush()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+        logger.info("Credenciais Google carregadas via GOOGLE_CREDENTIALS_JSON")
+        return
+
+    creds = Path(__file__).parent / "credentials.json"
+    if creds.exists():
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds)
+        logger.info("Credenciais Google carregadas via credentials.json local")
+
+
 def _init_vertex():
     if not _VERTEX_AVAILABLE:
         logger.warning("python-dotenv não instalado — chat IA desabilitado")
         return
     try:
         load_dotenv()
-        creds = Path(__file__).parent / "credentials.json"
-        if creds.exists():
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds)
+        _resolve_credentials()
         project    = os.getenv("PROJECT_ID")
         location   = os.getenv("LOCATION", "us-central1")
         model_name = os.getenv("MODEL_NAME", "gemini-2.5-flash")

@@ -1,9 +1,10 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "mfg.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).parent / "mfg.db")))
 
 DAY_NAMES = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
