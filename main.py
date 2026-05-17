@@ -62,7 +62,7 @@ def _embed_charts(text: str) -> str:
         chart_id = m.group(1)
         if not cs.get_chart_b64(chart_id):
             return "[gráfico indisponível]"
-        return f"![grafico]({BACKEND_URL}/chart/{chart_id})"
+        return f"![grafico](/chart/{chart_id})"
 
     def _pdf(m: re.Match) -> str:
         pdf_id = m.group(1)
@@ -70,7 +70,7 @@ def _embed_charts(text: str) -> str:
         if not row:
             return "[PDF indisponível]"
         _, filename = row
-        return f"[📥 {filename}]({BACKEND_URL}/pdf/{pdf_id})"
+        return f"[📥 {filename}](/pdf/{pdf_id})"
 
     text = _CHART_RE.sub(_chart, text)
     text = _PDF_RE.sub(_pdf, text)
