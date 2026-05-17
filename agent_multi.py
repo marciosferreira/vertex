@@ -7,7 +7,7 @@ Arquitetura:
        ↓ query
     Orquestrador (StateGraph)
        ├─ get_current_datetime()     → responde data/hora direto
-       └─ analisar_grafico(detalhes) → delega ao sub-agente
+       └─ consultar_analista(detalhes) → delega ao sub-agente
               └─ Sub-agente analista (StateGraph)
                     ├─ read_skill(filename)              → lê instruções do arquivo .md
                     ├─ chamar_api(url, params)            → chama a API REST
@@ -179,7 +179,8 @@ _TOOL_LABELS: dict[str, str] = {
     "chamar_api":           "🌐 Buscando dados da API",
     "executar_sql":         "🗄️ Consultando banco de dados",
     "analisar_dataframe":   "🔢 Processando e analisando dados",
-    "analisar_grafico":     "🔍 Delegando ao sub-agente analista",
+    "consultar_analista":   "🔍 Delegando ao sub-agente analista",
+    "rag":                  "📚 Consultando base de conhecimento",
     "get_current_datetime": "🕐 Verificando data e hora",
     "gerar_pdf":            "📄 Gerando relatório PDF",
     "gerar_excel":          "📊 Gerando planilha Excel",
@@ -331,15 +332,30 @@ def _build_pdf(titulo: str, conteudo: str, session_id: str) -> str:
 
 # ── Tools do orquestrador ─────────────────────────────────────────────────────
 
+_RAG_CONTEXT = (Path(__file__).parent / "rag_context.md").read_text(encoding="utf-8")
+
+
+@tool
+def rag() -> str:
+    """Retorna o contexto completo do domínio: o que cada painel significa, como OEE,
+    FPY, defeitos e manutenção são calculados, e como interpretar os dados do sistema.
+
+    Use quando o usuário perguntar o que é um indicador, como algo é calculado,
+    o que significa um painel, ou pedir explicações sobre o domínio industrial.
+    Não é necessário consultar_analista para responder perguntas conceituais —
+    use esta tool primeiro.
+    """
+    return _RAG_CONTEXT
+
 @tool
 def gerar_pdf(titulo: str, conteudo: str) -> str:
     """Gera PDF. NÃO usar para Excel, planilha, .xlsx ou spreadsheet — use gerar_excel nesses casos.
 
     Use APENAS quando o usuário mencionar explicitamente "PDF" ou ".pdf".
-    Deve ser chamado APÓS analisar_grafico ter retornado a análise completa.
+    Deve ser chamado APÓS consultar_analista ter retornado a análise completa.
 
     Fluxo correto:
-      1. Chame analisar_grafico() para obter a análise com gráficos.
+      1. Chame consultar_analista() para obter a análise com gráficos.
       2. Chame gerar_pdf() passando o resultado completo como conteudo.
       3. Responda ao usuário incluindo o token [pdf:uuid] retornado — ele será
          automaticamente convertido em link de download.
@@ -389,7 +405,7 @@ def gerar_excel(nome_dataframe: str, nome_arquivo: str, sheets: Optional[str] = 
     Use quando o usuário pedir Excel, planilha, xlsx ou spreadsheet.
     Não use para PDF (use gerar_pdf) nem para exibir tabela na tela.
 
-    Sempre chame analisar_grafico(tipo='tabela') antes para carregar os dados.
+    Sempre chame consultar_analista(tipo='tabela') antes para carregar os dados.
     O sub-agente retornará o nome do DataFrame (ex: 'producao', 'resultado').
     Para múltiplas abas, use sheets='Aba1=df1,Aba2=df2'.
 
@@ -661,10 +677,13 @@ def analisar_dataframe(script: str) -> str:
 
 @tool
 def calcular_periodo(periodo: str) -> str:
-    """Retorna as datas from/to em formato YYYY-MM-DD para um período em linguagem natural.
+    """Converte um período em linguagem natural para from_date e to_date em YYYY-MM-DD.
 
-    Use esta tool ANTES de chamar_api sempre que precisar de um intervalo de datas.
-    Nunca calcule datas manualmente.
+    OBRIGATÓRIO: chame esta tool ANTES de consultar_analista. O resultado fornece
+    os parâmetros from_date e to_date exigidos por consultar_analista — sem eles
+    a consulta ao sub-agente analista não pode ser realizada.
+
+    Retorna uma string no formato: from=YYYY-MM-DD&to=YYYY-MM-DD
 
     Args:
         periodo: Descrição do período desejado. Exemplos aceitos:
@@ -777,7 +796,7 @@ def _build_sub_agent(llm):
         f"## Skills disponíveis\n{catalogo}"
     )
 
-    sub_tools = [read_skill, calcular_periodo, chamar_api, executar_sql, analisar_dataframe, gerar_pdf, gerar_excel]
+    sub_tools = [read_skill, chamar_api, executar_sql, analisar_dataframe, gerar_pdf, gerar_excel]
     llm_sub = llm.bind_tools(sub_tools)
     no_sub_tools = ToolNode(sub_tools)
 
@@ -844,15 +863,19 @@ def _build_sub_agent(llm):
 # ── Tool do orquestrador que dispara o sub-agente ────────────────────────────
 
 @tool
-def analisar_grafico(detalhes: str, tipo: str = "grafico") -> str:
-    """Delega a análise ao sub-agente especialista.
+def consultar_analista(detalhes: str, from_date: str, to_date: str, tipo: str = "grafico") -> str:
+    """Delega a análise ao sub-agente analista de dados.
 
     O sub-agente irá identificar a skill correta, buscar os dados na API
     e retornar uma análise baseada nos dados reais.
 
+    IMPORTANTE: Sempre chame calcular_periodo() antes para obter from_date e to_date.
+
     Args:
-        detalhes: O que o usuário quer analisar (ex: "produção diária desta semana",
-                  "produção vs meta dos últimos 14 dias").
+        detalhes: O que o usuário quer analisar (ex: "produção diária",
+                  "produção vs meta", "defeitos por linha").
+        from_date: Data inicial no formato YYYY-MM-DD. Obter via calcular_periodo().
+        to_date: Data final no formato YYYY-MM-DD. Obter via calcular_periodo().
         tipo: Tipo de saída desejado. Use EXATAMENTE um dos valores abaixo:
               - "grafico"  → o sub-agente DEVE gerar um gráfico matplotlib (result = fig).
                              Use quando o usuário usou palavras como "gráfico", "chart",
@@ -868,7 +891,7 @@ def analisar_grafico(detalhes: str, tipo: str = "grafico") -> str:
     """
     if _sub_agent_graph is None:
         return "Sub-agente analista não inicializado."
-    msg_content = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n{detalhes}"
+    msg_content = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n[PERÍODO: from={from_date} to={to_date}]\n{detalhes}"
     resultado = _sub_agent_graph.invoke(
         {"messages": [HumanMessage(content=msg_content)]},
         config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 30},
@@ -895,7 +918,7 @@ def _build_orchestrator(llm, checkpointer=None):
         "Para perguntas simples que não exigem dados, responda diretamente."
     )
 
-    orq_tools = [get_current_datetime, analisar_grafico]
+    orq_tools = [get_current_datetime, calcular_periodo, consultar_analista, rag]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 

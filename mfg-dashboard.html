@@ -1483,16 +1483,18 @@ graph LR
     User([Usuário]) --> Orch[Orquestrador LangGraph]
     subgraph Orquestrador
         Orch --> T1[get_current_datetime]
-        Orch --> T2[analisar_grafico]
-        Orch --> T3[gerar_pdf]
+        Orch --> T2[calcular_periodo]
+        Orch --> T3[consultar_analista]
+        Orch --> T4[RAG]
     end
-    T2 --> Sub[Sub-Agente Analista]
+    T3 --> Sub[Sub-Agente Analista]
     subgraph SubGrafo[Sub-Grafo Analista]
         Sub --> S1[read_skill]
-        Sub --> S2[calcular_periodo]
-        Sub --> S3[chamar_api]
-        Sub --> S4[executar_sql]
-        Sub --> S5[analisar_dataframe]
+        Sub --> S2[chamar_api]
+        Sub --> S3[executar_sql]
+        Sub --> S4[analisar_dataframe]
+        Sub --> S5[gerar_pdf]
+        Sub --> S6[gerar_excel]
     end
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
     classDef highlight fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
