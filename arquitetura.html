@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFG Control AI — Arquitetura Agêntica</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- FontAwesome para Ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js para Gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Mermaid.js para Grafos -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            securityLevel: 'loose',
+            flowchart: { nodeSpacing: 120, rankSpacing: 160, curve: 'basis' },
+            themeVariables: { fontSize: '20px', fontFamily: 'Inter, sans-serif' }
+        });
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        pre, code { font-family: 'JetBrains Mono', monospace; }
+        .bg-grid { background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0); background-size: 24px 24px; }
+        .mermaid-wrap { overflow-x: auto; }
+        .mermaid { zoom: 1.6; transform-origin: top left; }
+        .mermaid svg { height: auto !important; }
+    </style>
+</head>
+<body class="bg-[#0B0F19] text-slate-100 min-h-screen bg-grid">
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-12">
+        
+        <!-- Hero Section -->
+        <section class="border border-slate-800 rounded-2xl bg-gradient-to-br from-[#0F1423] to-[#131B30] p-6 md:p-10 relative overflow-hidden shadow-2xl">
+            <div class="absolute top-0 right-0 p-8 opacity-10 pointer-events-none hidden lg:block">
+                <i class="fa-solid fa-robot text-9xl text-indigo-500"></i>
+            </div>
+            <div class="max-w-3xl">
+                <span class="text-indigo-400 font-mono text-sm uppercase tracking-widest font-semibold block mb-2">Um analista de dados sempre disponível</span>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-4">Arquitetura Agêntica Industrial</h1>
+                <p class="text-slate-300 leading-relaxed text-base md:text-lg mb-4">
+                    Imagine ter um <strong class="text-white">analista de dados ou cientista de dados</strong> disponível a qualquer momento, capaz de acessar os dados reais da sua operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos.
+                </p>
+                <p class="text-slate-400 leading-relaxed text-sm md:text-base">
+                    É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana e qual o impacto no OEE?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+                </p>
+                <div class="mt-6 flex flex-wrap gap-3 text-xs font-mono">
+                    <span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">📊 Gráficos customizados</span>
+                    <span class="px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300">📋 Tabelas e spreadsheets</span>
+                    <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">📥 Relatórios PDF</span>
+                    <span class="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">⚡ Dados em tempo real</span>
+                    <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300">💬 Linguagem natural</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- A Arquitetura em uma Frase -->
+        <section class="bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-6">
+            <h2 class="text-xs font-mono uppercase tracking-wider text-indigo-400 mb-3"><i class="fa-solid fa-compass"></i> A Arquitetura em uma frase</h2>
+            <blockquote class="text-lg md:text-xl font-medium text-slate-200 italic leading-snug">
+                "Um <span class="text-indigo-400 underline decoration-indigo-400/40">orquestrador</span> que interpreta o pedido em linguagem natural delega para um <span class="text-indigo-400 underline decoration-indigo-400/40">sub-agente especialista</span> que consulta <span class="text-indigo-400 underline decoration-indigo-400/40">APIs e banco de dados em tempo real</span>, analisa os dados em sandbox Python e entrega gráficos, tabelas ou PDFs — tudo transmitido ao vivo via <span class="text-indigo-400 underline decoration-indigo-400/40">streaming SSE</span>, habilitando decisões rápidas e baseadas em informação."
+            </blockquote>
+        </section>
+
+        <!-- Grafo Multi-Agente — largura total -->
+        <section class="border border-slate-800 rounded-xl bg-[#0F1423] p-6">
+            <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                <i class="fa-solid fa-diagram-project text-indigo-400"></i> Grafo Multi-Agente (LangGraph)
+            </h3>
+            <p class="text-slate-400 text-sm mb-6">A espinha dorsal é um grafo de estados (StateGraph) isolado em dois níveis de decisão.</p>
+            <div class="bg-[#0B0F19] p-6 rounded-lg overflow-auto border border-slate-900 mermaid-wrap">
+                <div class="mermaid">
+graph LR
+    User([Usuário]) --> Orch[Orquestrador LangGraph]
+
+    subgraph Orquestrador
+        Orch --> T1[get_current_datetime]
+        Orch --> T2[analisar_grafico]
+        Orch --> T3[gerar_pdf]
+    end
+
+    T2 --> Sub[Sub-Agente Analista]
+
+    subgraph SubGrafo[Sub-Grafo Analista]
+        Sub --> S1[read_skill]
+        Sub --> S2[calcular_periodo]
+        Sub --> S3[chamar_api]
+        Sub --> S4[executar_sql]
+        Sub --> S5[analisar_dataframe]
+    end
+
+    classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
+    classDef highlight fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
+    class Orch,Sub highlight;
+                </div>
+            </div>
+            <p class="text-xs text-slate-500 mt-4 leading-relaxed">
+                O orquestrador <strong>não sabe analisar dados</strong> (só sabe a quem perguntar). O sub-agente <strong>não tem acesso ao histórico global</strong> (só recebe a tarefa delegada).
+            </p>
+        </section>
+
+        <!-- Streaming SSE e Gráfico — dois cards lado a lado -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Card: Streaming SSE -->
+            <div class="border border-slate-800 rounded-xl bg-[#0F1423] p-6 flex flex-col">
+                <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                    <i class="fa-solid fa-terminal text-emerald-400"></i> Streaming em Tempo Real (SSE)
+                </h3>
+                <p class="text-slate-400 text-sm mb-4">Cada etapa chega ao frontend via Server-Sent Events, transmitida por um side-channel de fila por sessão.</p>
+                <div class="bg-[#0B0F19] rounded-lg p-4 text-xs space-y-3 border border-slate-900 flex-1">
+                    <div class="text-amber-400 flex items-center gap-2"><i class="fa-solid fa-spinner animate-spin"></i> <span class="italic">Analisando o pedido e verificando os dados disponíveis...</span></div>
+                    <div class="text-indigo-400 flex items-center gap-2"><i class="fa-solid fa-book-open"></i> <span>📖 Lendo instruções da skill</span></div>
+                    <div class="text-indigo-400 flex items-center gap-2"><i class="fa-solid fa-globe"></i> <span>🌐 Buscando dados da API</span></div>
+                    <div class="text-indigo-400 flex items-center gap-2"><i class="fa-solid fa-calculator"></i> <span>🔢 Processando e analisando dados</span></div>
+                    <div class="text-emerald-400 border-t border-slate-800 pt-3 mt-2 flex items-start gap-2">
+                        <i class="fa-solid fa-check-circle mt-0.5 shrink-0"></i>
+                        <span>A Linha 2 registrou <strong>3 paradas não planejadas</strong> nesta semana, impactando o OEE em <strong>−6,4 p.p.</strong> em relação à meta.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card: Gráfico gerado pelo agente -->
+            <div class="border border-slate-800 rounded-xl bg-[#0F1423] p-6 flex flex-col">
+                <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-line text-sky-400"></i> Artefatos Gerados pelo Agente
+                </h3>
+                <p class="text-slate-400 text-sm mb-4">Gráficos Matplotlib são convertidos para PNG, salvos no SQLite com UUID e injetados como token no Markdown da resposta.</p>
+                <div class="bg-[#0B0F19] p-4 rounded-lg border border-slate-900">
+                    <div class="text-xs font-mono text-slate-500 mb-3">Exemplo de saída: <span class="text-sky-400">[chart:8a3f-...]</span> → renderizado como imagem</div>
+                    <div style="position:relative;height:180px;">
+                        <canvas id="mockChart"></canvas>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-4 text-xs font-mono">
+                    <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📊 Gráfico</span>
+                    <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📋 Tabela</span>
+                    <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📥 PDF</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Detalhes Técnicos: Skills e Namespace -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Skills Card -->
+            <div class="border border-slate-800 rounded-xl bg-[#0F1423] p-6 relative overflow-hidden">
+                <div class="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
+                    <i class="fa-solid fa-book text-9xl"></i>
+                </div>
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="h-10 w-10 bg-indigo-500/10 border border-indigo-500/30 rounded-lg flex items-center justify-center text-indigo-400">
+                        <i class="fa-solid fa-bookmark"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-white text-base">Skills: Contexto Injetado na Hora Certa</h4>
+                        <span class="text-xs font-mono text-slate-400">Lazy-loading — tokens consumidos só quando necessário</span>
+                    </div>
+                </div>
+                <p class="text-slate-300 text-sm leading-relaxed mb-4">
+                    Cada skill é um arquivo <code>.md</code> que documenta um endpoint industrial. O agente <strong class="text-white">não carrega tudo no startup</strong> — isso desperdiçaria tokens em skills que podem nunca ser usadas naquela sessão.
+                </p>
+                <div class="space-y-2 mb-4">
+                    <div class="flex items-start gap-3 bg-[#0B0F19] border border-slate-900 rounded-lg p-3">
+                        <span class="text-amber-400 font-mono text-xs font-bold mt-0.5 shrink-0">STARTUP</span>
+                        <span class="text-xs text-slate-400">Apenas os <strong class="text-slate-300">cabeçalhos (4 linhas)</strong> de cada skill são injetados no system prompt. O agente sabe o que existe, mas não carrega o conteúdo.</span>
+                    </div>
+                    <div class="flex items-start gap-3 bg-[#0B0F19] border border-slate-900 rounded-lg p-3">
+                        <span class="text-emerald-400 font-mono text-xs font-bold mt-0.5 shrink-0">EXECUÇÃO</span>
+                        <span class="text-xs text-slate-400">Ao identificar o que precisa, o agente invoca <code class="text-indigo-300">read_skill('nome.md')</code> e recebe o documento completo <strong class="text-slate-300">só naquele momento</strong>.</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 bg-indigo-500/5 border border-indigo-500/20 rounded-lg p-3">
+                    <i class="fa-solid fa-coins text-indigo-400 text-sm"></i>
+                    <span class="text-xs text-slate-300">Resultado: dezenas de endpoints suportados <strong class="text-white">sem inflar o custo por token</strong> de cada requisição.</span>
+                </div>
+            </div>
+
+            <!-- Namespace Card -->
+            <div class="border border-slate-800 rounded-xl bg-[#0F1423] p-6 relative overflow-hidden">
+                <div class="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
+                    <i class="fa-solid fa-flask text-9xl"></i>
+                </div>
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="h-10 w-10 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-center justify-center text-purple-400">
+                        <i class="fa-solid fa-flask"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-white text-base">Sandbox Python — Poder Total sobre os Dados</h4>
+                        <span class="text-xs font-mono text-slate-400">Ambiente persistente por sessão, estilo Jupyter</span>
+                    </div>
+                </div>
+                <p class="text-slate-300 text-sm leading-relaxed mb-4">
+                    O agente <strong class="text-white">gera e executa código Python em tempo real</strong> sobre os dados da operação. Não é uma consulta fixa — é um analista que raciocina, transforma e entrega o que for necessário.
+                </p>
+                <div class="space-y-2 mb-4 text-xs text-slate-400 font-mono">
+                    <div class="bg-[#0B0F19] border border-slate-900 rounded-lg p-3 space-y-1">
+                        <div class="text-slate-500 mb-2">// O que o agente pode fazer com os dados:</div>
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-400"></i> Cruzar tabelas, calcular KPIs, agrupar por turno, linha ou período</div>
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-400"></i> Gerar gráficos customizados (barras, linhas, dispersão, heatmap...)</div>
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-400"></i> Produzir tabelas e relatórios PDF formatados</div>
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-400"></i> Executar análises estatísticas (tendência, desvio, correlação)</div>
+                        <div class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-400"></i> Qualquer análise expressável em Python/Pandas — sem limitação</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 bg-purple-500/5 border border-purple-500/20 rounded-lg p-3">
+                    <i class="fa-solid fa-memory text-purple-400 text-sm"></i>
+                    <span class="text-xs text-slate-300">Variáveis criadas em um passo ficam disponíveis nos passos seguintes — análises incrementais sem recarregar os dados.</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Escala para qualquer volume -->
+        <section class="border border-slate-800 rounded-xl bg-[#0F1423] p-6 overflow-hidden">
+            <div class="flex items-center gap-2 mb-2">
+                <i class="fa-solid fa-expand text-amber-400"></i>
+                <h3 class="text-lg font-bold text-white">Escala para qualquer volume de dados</h3>
+            </div>
+            <p class="text-slate-400 text-sm mb-6">O gestor pode pedir análise de um turno ou de seis meses — o agente trata da mesma forma, sem degradação de desempenho e sem aumento de custo proporcional ao volume.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-[#0B0F19] border border-slate-900 rounded-xl p-4 flex flex-col gap-2">
+                    <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+                        <i class="fa-solid fa-database"></i> Dados ficam no backend
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Os DataFrames nunca trafegam para o LLM. O modelo recebe apenas metadados — nome, tipo e dimensão — e raciocina sobre eles sem ver os dados brutos.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-900 rounded-xl p-4 flex flex-col gap-2">
+                    <div class="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
+                        <i class="fa-solid fa-layer-group"></i> Análise em etapas
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">O agente processa os dados em passos incrementais no sandbox Python — filtra, agrega, calcula — e só devolve o resultado final ao LLM, não os dados intermediários.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-900 rounded-xl p-4 flex flex-col gap-2">
+                    <div class="flex items-center gap-2 text-indigo-400 font-semibold text-sm">
+                        <i class="fa-solid fa-coins"></i> Custo por token controlado
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Analisar 6 meses de produção custa os mesmos tokens que analisar 1 dia — o volume fica no banco, o LLM só vê o que importa para responder.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Matriz de Resolução de Problemas Industriais -->
+        <section class="border border-slate-800 rounded-xl bg-[#0F1423] p-6">
+            <div class="mb-6">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-industry text-emerald-400"></i> Por que isso importa para a sua fábrica
+                </h3>
+                <p class="text-sm text-slate-400">Como a engenharia de software aplicada resolve as dores do chão de fábrica.</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Card 1 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "O modelo inventa dados"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">Sub-agente só responde baseado no output de <code>analisar_dataframe</code>. Sem dados executados, sem resposta.</p>
+                </div>
+                <!-- Card 2 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "A tela trava esperando resposta"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">Streaming SSE ativo nativamente, atualizando o raciocínio (thinking) e tool calls em tempo real.</p>
+                </div>
+                <!-- Card 3 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "Análise de grandes períodos falha"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">O namespace em memória armazena as transformações por etapa sem poluir a janela de contexto do LLM.</p>
+                </div>
+                <!-- Card 4 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "O agente esquece o contexto"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">Checkpointer nativo em SQLite salva o estado exato da conversa vinculada ao ID da sessão de atendimento.</p>
+                </div>
+                <!-- Card 5 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "Adicionar APIs exige retrabalho"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">Extensibilidade plug-and-play através de arquivos Markdown simples em um diretório de skills mapeado.</p>
+                </div>
+                <!-- Card 6 -->
+                <div class="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-indigo-500/50 transition">
+                    <span class="text-rose-400 text-xs font-mono block mb-1"><i class="fa-solid fa-circle-xmark"></i> "Excesso de APIs confunde o LLM"</span>
+                    <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
+                    <p class="text-xs text-slate-400 leading-relaxed">Lazy-loading estratégico restringe a injeção do prompt de sistema apenas à skill correlacionada ao escopo.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stack Tecnológica Grid -->
+        <section class="border-t border-slate-800 pt-8">
+            <h4 class="text-xs font-mono uppercase tracking-wider text-slate-400 text-center mb-6">Core Infrastructure Stack</h4>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-center font-mono text-xs">
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">LLM</span> Gemini 2.5 Flash</div>
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">Orquestração</span> LangGraph 1.0+</div>
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">API</span> FastAPI + SSE</div>
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">Análise</span> Pandas/Matplotlib</div>
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">Persistência</span> SQLite Backend</div>
+                <div class="bg-[#0F1423] p-3 rounded-lg border border-slate-800"><span class="text-indigo-400 block font-bold mb-1">Threading</span> ContextVar API</div>
+            </div>
+        </section>
+        
+    </main>
+
+    <!-- Footer -->
+
+    <!-- Script do Gráfico Simulado -->
+    <script>
+        const ctx = document.getElementById('mockChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
+                datasets: [{
+                    label: 'Produção Real (L2)',
+                    data: [120, 145, 139, 162, 150, 80, 95],
+                    borderColor: '#6366F1',
+                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true
+                }, {
+                    label: 'Meta Estática',
+                    data: [140, 140, 140, 140, 140, 100, 100],
+                    borderColor: '#F59E0B',
+                    borderDash: [5, 5],
+                    borderWidth: 1.5,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { color: '#64748B', font: { size: 9 } } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748B', font: { size: 9 } } }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

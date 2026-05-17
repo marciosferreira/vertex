@@ -53,6 +53,7 @@ import chart_store as cs
 
 _CHART_RE = re.compile(r'\[chart:([a-f0-9\-]{36})\]')
 _PDF_RE   = re.compile(r'\[pdf:([a-f0-9\-]{36})\]')
+_EXCEL_RE = re.compile(r'\[excel:([a-f0-9\-]{36})\]')
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -72,8 +73,17 @@ def _embed_charts(text: str) -> str:
         _, filename = row
         return f"[📥 {filename}](/pdf/{pdf_id})"
 
+    def _excel(m: re.Match) -> str:
+        excel_id = m.group(1)
+        row = cs.get_excel(excel_id)
+        if not row:
+            return "[Excel indisponível]"
+        _, filename = row
+        return f"[📥 {filename}](/excel/{excel_id})"
+
     text = _CHART_RE.sub(_chart, text)
     text = _PDF_RE.sub(_pdf, text)
+    text = _EXCEL_RE.sub(_excel, text)
     return text
 
 
@@ -234,6 +244,20 @@ def download_pdf(pdf_id: str):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/excel/{excel_id}")
+def download_excel(excel_id: str):
+    """Serve uma planilha Excel gerada pelo agente para download."""
+    row = cs.get_excel(excel_id)
+    if not row:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Excel não encontrado."})
+    excel_bytes, filename = row
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

@@ -182,6 +182,7 @@ _TOOL_LABELS: dict[str, str] = {
     "analisar_grafico":     "🔍 Delegando ao sub-agente analista",
     "get_current_datetime": "🕐 Verificando data e hora",
     "gerar_pdf":            "📄 Gerando relatório PDF",
+    "gerar_excel":          "📊 Gerando planilha Excel",
 }
 
 
@@ -332,9 +333,9 @@ def _build_pdf(titulo: str, conteudo: str, session_id: str) -> str:
 
 @tool
 def gerar_pdf(titulo: str, conteudo: str) -> str:
-    """Gera um relatório PDF e retorna um token de download.
+    """Gera PDF. NÃO usar para Excel, planilha, .xlsx ou spreadsheet — use gerar_excel nesses casos.
 
-    Use APENAS quando o usuário pedir explicitamente um PDF ou relatório para download.
+    Use APENAS quando o usuário mencionar explicitamente "PDF" ou ".pdf".
     Deve ser chamado APÓS analisar_grafico ter retornado a análise completa.
 
     Fluxo correto:
@@ -382,6 +383,94 @@ def gerar_pdf(titulo: str, conteudo: str) -> str:
 
 
 @tool
+def gerar_excel(nome_dataframe: str, nome_arquivo: str, sheets: Optional[str] = None) -> str:
+    """Cria um arquivo Excel (.xlsx) e disponibiliza link para download.
+
+    Use quando o usuário pedir Excel, planilha, xlsx ou spreadsheet.
+    Não use para PDF (use gerar_pdf) nem para exibir tabela na tela.
+
+    Sempre chame analisar_grafico(tipo='tabela') antes para carregar os dados.
+    O sub-agente retornará o nome do DataFrame (ex: 'producao', 'resultado').
+    Para múltiplas abas, use sheets='Aba1=df1,Aba2=df2'.
+
+    Args:
+        nome_dataframe: Nome do DataFrame no namespace (ex: 'resultado'). Ignorado se sheets fornecido.
+        nome_arquivo: Nome do arquivo sem extensão (ex: 'producao_maio').
+        sheets: Opcional. Múltiplas abas no formato 'Aba1=df1,Aba2=df2'.
+    """
+    import io
+    _tlog("gerar_excel", "CHAMADA", nome_dataframe=nome_dataframe, nome_arquivo=nome_arquivo, sheets=sheets)
+    try:
+        ns = _ns_get()
+        output = io.BytesIO()
+
+        if sheets and sheets.strip():
+            # múltiplas abas: "Aba1=df1,Aba2=df2"
+            mapa = {}
+            for par in sheets.split(","):
+                par = par.strip()
+                if "=" not in par:
+                    continue
+                aba, var = par.split("=", 1)
+                mapa[aba.strip()] = var.strip()
+
+            if not mapa:
+                return "Erro: parâmetro sheets inválido. Use formato 'Aba1=df1,Aba2=df2'."
+
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                for aba, var in mapa.items():
+                    df = ns.get(var)
+                    if df is None or not isinstance(df, pd.DataFrame):
+                        return f"Erro: variável '{var}' não encontrada ou não é um DataFrame."
+                    df.to_excel(writer, sheet_name=aba[:31], index=False)
+                    _fmt_excel_sheet(writer.sheets[aba[:31]], df)
+        else:
+            df = ns.get(nome_dataframe)
+            if df is None or not isinstance(df, pd.DataFrame):
+                return (
+                    f"Erro: variável '{nome_dataframe}' não encontrada no namespace. "
+                    f"Variáveis disponíveis: {[k for k, v in ns.items() if isinstance(v, pd.DataFrame)]}"
+                )
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="Dados", index=False)
+                _fmt_excel_sheet(writer.sheets["Dados"], df)
+
+        excel_bytes = output.getvalue()
+        safe_name = _re.sub(r'[^\w\- ]', '', nome_arquivo)[:40].strip().replace(" ", "_")
+        filename = f"{safe_name or 'dados'}.xlsx"
+        excel_id = chart_store.save_excel(_current_session.get(), excel_bytes, filename)
+        result = f"[excel:{excel_id}]"
+        _tlog("gerar_excel", "RETORNO", status="OK", excel_id=excel_id, filename=filename)
+        return result
+    except Exception as e:
+        msg = f"Erro ao gerar Excel: {e}"
+        _tlog("gerar_excel", "RETORNO", status="ERRO", erro=msg)
+        return msg
+
+
+def _fmt_excel_sheet(ws, df: pd.DataFrame) -> None:
+    """Aplica largura automática e cabeçalho destacado na worksheet openpyxl."""
+    from openpyxl.styles import PatternFill, Font, Alignment
+
+    header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+        # auto-width: maior entre o cabeçalho e o conteúdo da coluna
+        max_len = len(str(col_name))
+        for row_idx in range(2, min(len(df) + 2, 1002)):  # amostra de até 1000 linhas
+            val = ws.cell(row=row_idx, column=col_idx).value
+            if val is not None:
+                max_len = max(max_len, len(str(val)))
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 4, 60)
+
+
+@tool
 def get_current_datetime() -> str:
     """Retorna a data e hora atual do sistema.
 
@@ -397,13 +486,15 @@ def get_current_datetime() -> str:
 
 @tool
 def read_skill(filename: str) -> str:
-    """Lê o conteúdo completo de um arquivo de skill (.md) da pasta de skills.
+    """Lê as instruções completas de uma skill antes de executar qualquer análise.
 
-    Use esta tool para obter as instruções detalhadas de como realizar
-    um tipo específico de análise.
+    OBRIGATÓRIO: chame esta tool SEMPRE como primeiro passo de qualquer análise,
+    antes de chamar_api, executar_sql ou analisar_dataframe. A skill define quais
+    endpoints usar, quais parâmetros passar e como processar os dados.
 
     Args:
-        filename: Nome do arquivo .md (ex: 'analise_producao.md').
+        filename: Nome do arquivo .md da skill (ex: 'analise_producao.md').
+                  Consulte o catálogo no system prompt para ver os arquivos disponíveis.
     """
     _tlog("read_skill", "CHAMADA", filename=filename)
     caminho = SKILLS_FOLDER / filename
@@ -504,6 +595,12 @@ def analisar_dataframe(script: str) -> str:
     Variáveis criadas em chamadas anteriores desta tool também estão disponíveis.
     Atribua à variável `result` o que deve ser exibido — DataFrames são automaticamente
     convertidos para tabela markdown. Use print() para textos adicionais.
+
+    IMPORTANTE — nomeação de variáveis para geração de Excel:
+    Quando o resultado será usado pelo orquestrador para gerar_excel, atribua o DataFrame
+    a uma variável com nome descritivo no script (ex: `producao = df_filtrado`).
+    Após executar, mencione explicitamente na resposta final o nome da variável
+    (ex: "DataFrame 'producao' disponível no namespace com 30 linhas.").
 
     Args:
         script: Lógica de análise a executar sobre os dados disponíveis.
@@ -665,21 +762,18 @@ def _build_sub_agent(llm):
         "(cruzamentos entre tabelas, rankings, análises customizadas), use read_skill('analise_sql_livre.md') "
         "e depois executar_sql() para construir a query SQL adequada.\n\n"
         "## Regras\n"
-        "- NUNCA responda com análises ou números sem antes obter os dados via chamar_api ou executar_sql.\n"
         "- NUNCA invente dados — use apenas resultados de analisar_dataframe.\n"
         "- Se analisar_dataframe retornar erro, corrija e chame novamente.\n"
-        "- Formate SEMPRE a resposta final em markdown: use tabelas para dados tabulares, "
-        "**negrito** para valores relevantes e listas quando apropriado.\n"
+        "- Formate SEMPRE a resposta final em markdown: tabelas para dados tabulares, "
+        "**negrito** para valores relevantes.\n"
         "- TIPO DE SAÍDA: a mensagem pode começar com um prefixo `[TIPO DE SAÍDA OBRIGATÓRIO: X]`.\n"
-        "  - GRAFICO → o script em analisar_dataframe DEVE atribuir `result = fig` "
-        "(figura matplotlib). NUNCA retorne apenas tabela quando o tipo for GRAFICO.\n"
-        "  - TABELA  → retorne os dados como tabela markdown (result = df ou DataFrame).\n"
-        "  - AMBOS   → gere gráfico (result = fig) em uma chamada e tabela em outra.\n"
+        "  - GRAFICO → `result = fig` (figura matplotlib). NUNCA retorne tabela quando tipo=GRAFICO.\n"
+        "  - TABELA  → `result = df`. Mencione na resposta final o nome da variável DataFrame\n"
+        "    ex: 'DataFrame `producao` disponível no namespace com 30 linhas.'\n"
+        "  - AMBOS   → gráfico em uma chamada de analisar_dataframe, tabela em outra.\n"
         "  Se não houver prefixo, padrão é GRAFICO.\n"
-        "- TOKENS DE GRÁFICO: quando analisar_dataframe retornar um token `[chart:uuid]`, "
-        "você DEVE copiá-lo LITERALMENTE na sua resposta final. "
-        "Nunca omita o token — sem ele o gráfico não aparece para o usuário. "
-        "Exemplo correto de resposta: 'Aqui está o gráfico:\\n\\n[chart:8655a54a-3a22-42cb-a2c9-8c613ae7007d]\\n\\nA produção ficou abaixo da meta em 13 dos 14 dias.'\n\n"
+        "- TOKENS DE GRÁFICO: copie LITERALMENTE o token `[chart:uuid]` retornado por "
+        "analisar_dataframe na resposta final. Nunca omita — sem ele o gráfico não aparece.\n\n"
         f"## Skills disponíveis\n{catalogo}"
     )
 
@@ -763,11 +857,13 @@ def analisar_grafico(detalhes: str, tipo: str = "grafico") -> str:
               - "grafico"  → o sub-agente DEVE gerar um gráfico matplotlib (result = fig).
                              Use quando o usuário usou palavras como "gráfico", "chart",
                              "plot", "visualize", "visualização", "mostre", "desenhe".
-              - "tabela"   → o sub-agente DEVE retornar dados em tabela markdown.
-                             Use quando o usuário usou palavras como "tabela", "lista",
-                             "dados", "mostre os números".
-              - "ambos"    → gráfico E tabela. Use quando o usuário pediu os dois,
-                             ou para análises completas / relatórios.
+              - "tabela"   → o sub-agente retorna os dados como tabela exibida na tela.
+                             Use quando o usuário pediu "tabela", "lista", "dados", "números"
+                             ou qualquer exibição tabular na resposta.
+                             Também use como pré-passo quando gerar_excel for chamado na sequência.
+              - "ambos"    → gráfico E tabela juntos. Use apenas quando o usuário pediu
+                             explicitamente visualização gráfica E dados numéricos ao mesmo tempo.
+                             NÃO use "ambos" para pedidos de PDF ou Excel.
               Padrão: "grafico". Em caso de dúvida, prefira "grafico".
     """
     if _sub_agent_graph is None:
@@ -794,29 +890,12 @@ MAX_INTERACOES = int(os.getenv("MAX_INTERACOES", "10"))
 
 def _build_orchestrator(llm, checkpointer=None):
     ORQ_SYSTEM_PROMPT = (
-        "Você é o agente orquestrador de um sistema de monitoramento industrial.\n\n"
-        "## Tools disponíveis\n"
-        "- get_current_datetime(): use quando o usuário perguntar data ou hora.\n"
-        "- analisar_grafico(detalhes, tipo): use quando o usuário pedir análise de dados, "
-        "gráficos ou relatórios. O sub-agente especialista busca os dados e retorna a análise.\n"
-        "  OBRIGATÓRIO: passe o parâmetro `tipo` conforme o pedido do usuário:\n"
-        "    tipo='grafico' → usuário pediu gráfico, chart, plot, visualização\n"
-        "    tipo='tabela'  → usuário pediu tabela, lista, dados, números\n"
-        "    tipo='ambos'   → usuário pediu os dois, ou análise completa / PDF\n"
-        "  Padrão: tipo='grafico'. Em caso de dúvida use 'grafico'.\n"
-        "- gerar_pdf(titulo, conteudo): use APENAS quando o usuário pedir explicitamente "
-        "um PDF ou relatório para download.\n"
-        "  REGRA ABSOLUTA: NUNCA chame gerar_pdf sem antes ter chamado analisar_grafico.\n"
-        "  O parametro conteudo DEVE ser o texto completo retornado por analisar_grafico.\n"
-        "  Fluxo obrigatório:\n"
-        "    1. Chame analisar_grafico() e aguarde o resultado completo.\n"
-        "    2. Chame gerar_pdf() passando EXATAMENTE o resultado de analisar_grafico como conteudo.\n"
-        "    3. Inclua o token [pdf:uuid] retornado na sua resposta — "
-        "ele será convertido em link de download automaticamente.\n\n"
-        "Para perguntas que não exigem tools, responda diretamente."
+        "Você é o agente orquestrador de um sistema de monitoramento industrial.\n"
+        "Use as tools disponíveis conforme descrito em cada uma delas.\n"
+        "Para perguntas simples que não exigem dados, responda diretamente."
     )
 
-    orq_tools = [get_current_datetime, analisar_grafico, gerar_pdf]
+    orq_tools = [get_current_datetime, analisar_grafico, gerar_excel, gerar_pdf]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 

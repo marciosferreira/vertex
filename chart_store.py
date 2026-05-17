@@ -36,6 +36,15 @@ def init_chart_store(db_path: Path) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    _conn.execute("""
+        CREATE TABLE IF NOT EXISTS excels (
+            excel_id   TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            excel_blob BLOB NOT NULL,
+            filename   TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
     _conn.commit()
 
 
@@ -71,6 +80,31 @@ def get_pdf(pdf_id: str) -> tuple[bytes, str] | None:
     with _lock:
         row = _conn.execute(
             "SELECT pdf_blob, filename FROM pdfs WHERE pdf_id = ?", (pdf_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return row[0], row[1]
+
+
+def save_excel(session_id: str, excel_bytes: bytes, filename: str) -> str:
+    if _conn is None:
+        raise RuntimeError("chart_store não inicializado.")
+    excel_id = str(uuid.uuid4())
+    with _lock:
+        _conn.execute(
+            "INSERT INTO excels (excel_id, session_id, excel_blob, filename) VALUES (?, ?, ?, ?)",
+            (excel_id, session_id, excel_bytes, filename),
+        )
+        _conn.commit()
+    return excel_id
+
+
+def get_excel(excel_id: str) -> tuple[bytes, str] | None:
+    if _conn is None:
+        return None
+    with _lock:
+        row = _conn.execute(
+            "SELECT excel_blob, filename FROM excels WHERE excel_id = ?", (excel_id,)
         ).fetchone()
     if not row:
         return None
