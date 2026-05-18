@@ -1,0 +1,14 @@
+{
+  "task_id": "001",
+  "task_name": "Relatório de Produção Diária (2 em 2 min)",
+  "run_at": "2026-05-17T21:08:06.998188",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "08:00"
+  }
+}

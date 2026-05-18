@@ -1,0 +1,1 @@
+Houve um problema de conexão ao tentar buscar os dados de produção. Não foi possível gerar o relatório de produção acumulada diária. Por favor, tente novamente mais tarde.

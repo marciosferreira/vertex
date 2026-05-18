@@ -42,6 +42,13 @@ from langgraph.prebuilt import ToolNode
 from typing_extensions import Annotated, TypedDict
 
 import chart_store
+from scheduler.tools import (
+    schedule_task,
+    set_task_instructions,
+    list_scheduled_tasks,
+    delete_scheduled_task,
+    update_scheduled_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +59,7 @@ SKILL_HEADER_LINES = 4
 
 _orchestrator_graph = None
 _sub_agent_graph = None
+_scheduler_agent_graph = None
 _checkpointer = None
 
 # Propaga o session_id através das fronteiras de thread do ToolNode.
@@ -174,16 +182,22 @@ _event_queues: dict = {}  # session_id → queue.Queue
 _eq_lock = threading.Lock()
 
 _TOOL_LABELS: dict[str, str] = {
-    "read_skill":           "📖 Lendo instruções da skill",
-    "calcular_periodo":     "📅 Calculando período",
-    "chamar_api":           "🌐 Buscando dados da API",
-    "executar_sql":         "🗄️ Consultando banco de dados",
-    "analisar_dataframe":   "🔢 Processando e analisando dados",
-    "consultar_analista":   "🔍 Delegando ao sub-agente analista",
-    "rag":                  "📚 Consultando base de conhecimento",
-    "get_current_datetime": "🕐 Verificando data e hora",
-    "gerar_pdf":            "📄 Gerando relatório PDF",
-    "gerar_excel":          "📊 Gerando planilha Excel",
+    "read_skill":              "📖 Lendo instruções da skill",
+    "calcular_periodo":        "📅 Calculando período",
+    "chamar_api":              "🌐 Buscando dados da API",
+    "executar_sql":            "🗄️ Consultando banco de dados",
+    "analisar_dataframe":      "🔢 Processando e analisando dados",
+    "consultar_analista":      "🔍 Delegando ao sub-agente analista",
+    "rag":                     "📚 Consultando base de conhecimento",
+    "get_current_datetime":    "🕐 Verificando data e hora",
+    "gerar_pdf":               "📄 Gerando relatório PDF",
+    "gerar_excel":             "📊 Gerando planilha Excel",
+    "gerenciar_agenda":         "🗓️ Gerenciando agenda de relatórios",
+    "schedule_task":            "🗓️ Agendando tarefa",
+    "set_task_instructions":    "📝 Salvando instruções da tarefa",
+    "list_scheduled_tasks":     "📋 Listando tarefas agendadas",
+    "delete_scheduled_task":    "🗑️ Removendo tarefa agendada",
+    "update_scheduled_task":    "✏️ Editando tarefa agendada",
 }
 
 
@@ -906,6 +920,96 @@ def consultar_analista(detalhes: str, from_date: str, to_date: str, tipo: str = 
     return content
 
 
+# ── Sub-agente de scheduling ─────────────────────────────────────────────────
+
+def _build_scheduler_agent(llm):
+    SCH_SYSTEM_PROMPT = (
+        "Você é o sub-agente responsável por gerenciar o agendamento de tarefas.\n\n"
+        "## Suas tools\n"
+        "- schedule_task         → cria uma tarefa nova (com ou sem instructions)\n"
+        "- set_task_instructions → define/substitui as instruções de execução de uma tarefa\n"
+        "- list_scheduled_tasks  → lista tarefas (mostra só name + description ao usuário)\n"
+        "- delete_scheduled_task → remove uma tarefa pelo ID\n"
+        "- update_scheduled_task → edita name, description, frequency, time, email, weekday, day\n\n"
+        "## Campos importantes\n"
+        "- description: texto curto e legível que descreve o que a tarefa faz. "
+        "Aparece na listagem para o usuário. Ex: 'Relatório semanal de OEE toda segunda às 8h.'\n"
+        "- instructions: passo a passo detalhado com o código Python validado. "
+        "Não aparece na listagem. O daemon usa isso para executar a tarefa de forma determinística.\n\n"
+        "## Fluxo de criação\n"
+        "1. Crie a tarefa com schedule_task (task já nasce ativa).\n"
+        "2. Execute o fluxo imediatamente usando as tools do agente principal.\n"
+        "3. Forneça o link do relatório gerado ao usuário.\n"
+        "4. Chame set_task_instructions com o passo a passo + código que foi executado.\n"
+        "5. Se o usuário pedir ajustes, corrija, reexecute e chame set_task_instructions novamente.\n\n"
+        "## Frequências aceitas\n"
+        "once | daily | weekly (requer weekday) | monthly (requer day) |\n"
+        "every_Xm (ex: every_2m) | every_Xh (ex: every_6h) | every_Xd (ex: every_3d)\n\n"
+        "## Salvar instruções via instrução textual\n"
+        "Se a instrução recebida começar com 'set_instructions task [ID]:', extraia o ID\n"
+        "e o texto após ':' e chame set_task_instructions(task_id=ID, instructions=texto).\n\n"
+        "## REGRA DE RESPOSTA — OBRIGATÓRIA\n"
+        "Sempre retorne o output LITERAL e COMPLETO da tool na sua resposta final.\n"
+        "NUNCA resuma, NUNCA substitua por frases como 'concluído' ou 'listagem feita'.\n"
+        "O orquestrador depende do conteúdo exato para repassar ao usuário."
+    )
+
+    sch_tools = [schedule_task, set_task_instructions, list_scheduled_tasks, delete_scheduled_task, update_scheduled_task]
+    llm_sch = llm.bind_tools(sch_tools)
+    no_sch_tools = ToolNode(sch_tools)
+
+    def no_scheduler(state: State) -> dict:
+        msgs = [SystemMessage(content=SCH_SYSTEM_PROMPT)] + list(state["messages"])
+        response = llm_sch.invoke(msgs)
+        session = _current_session.get()
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            for tc in response.tool_calls:
+                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
+                _push_event(session, {"type": "tool", "name": tc["name"], "label": label})
+        return {"messages": [response]}
+
+    def sch_para_onde(state: State) -> str:
+        ultima = state["messages"][-1]
+        if hasattr(ultima, "tool_calls") and ultima.tool_calls:
+            return "tools"
+        return END
+
+    builder = StateGraph(State)
+    builder.add_node("scheduler", no_scheduler)
+    builder.add_node("tools", no_sch_tools)
+    builder.add_edge(START, "scheduler")
+    builder.add_conditional_edges("scheduler", sch_para_onde, {"tools": "tools", END: END})
+    builder.add_edge("tools", "scheduler")
+
+    return builder.compile()
+
+
+@tool
+def gerenciar_agenda(instrucao: str) -> str:
+    """Delega ao sub-agente de scheduling operações sobre tarefas agendadas.
+
+    Use para: criar, listar, editar, deletar tarefas e salvar instruções de execução.
+
+    Exemplos de instruções:
+      - "Criar tarefa 'Relatório OEE Semanal', frequência weekly, weekday monday, time 08:00"
+      - "Listar todas as tarefas agendadas"
+      - "Deletar tarefa 003"
+      - "set_instructions task 001: Passo 1 — buscar produção dos últimos 7 dias com
+         consultar_analista(periodo='last_7_days'). Passo 2 — gerar PDF com gerar_pdf()."
+
+    Args:
+        instrucao: Descrição completa da operação. Para salvar instruções de uma tarefa
+                   recém-criada, use o formato 'set_instructions task [ID]: [passos]'.
+    """
+    if _scheduler_agent_graph is None:
+        return "Sub-agente de scheduling não inicializado."
+    resultado = _scheduler_agent_graph.invoke(
+        {"messages": [HumanMessage(content=instrucao)]},
+        config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 15},
+    )
+    return resultado["messages"][-1].content
+
+
 # ── Orquestrador ──────────────────────────────────────────────────────────────
 
 MAX_INTERACOES = int(os.getenv("MAX_INTERACOES", "10"))
@@ -915,10 +1019,31 @@ def _build_orchestrator(llm, checkpointer=None):
     ORQ_SYSTEM_PROMPT = (
         "Você é o agente orquestrador de um sistema de monitoramento industrial.\n"
         "Use as tools disponíveis conforme descrito em cada uma delas.\n"
-        "Para perguntas simples que não exigem dados, responda diretamente."
+        "Para perguntas simples que não exigem dados, responda diretamente.\n\n"
+        "## Agendamento de tarefas — fluxo obrigatório ao CRIAR uma tarefa nova\n"
+        "Quando o usuário pedir para criar uma tarefa agendada, siga EXATAMENTE estes passos\n"
+        "SEM fazer perguntas ao usuário — infira nome e descrição a partir do contexto:\n"
+        "1. Chame gerenciar_agenda para criar a tarefa. Gere nome e descrição você mesmo\n"
+        "   com base no pedido do usuário. NUNCA peça ao usuário para fornecer descrição.\n"
+        "2. Execute o relatório/análise IMEDIATAMENTE usando consultar_analista e/ou gerar_pdf,\n"
+        "   exatamente como o usuário descreveu. Isso serve como preview para o usuário revisar.\n"
+        "3. Chame set_task_instructions(task_id=ID, instructions='passo a passo do que foi\n"
+        "   feito no passo 2, incluindo parâmetros — período, filtros, tipo de gráfico, etc.').\n"
+        "4. Informe ao usuário que o relatório foi gerado, mostre o link e diga que essa\n"
+        "   será a estrutura executada automaticamente nos próximos agendamentos.\n\n"
+        "## Frequências suportadas — use exatamente estes valores\n"
+        "once | daily | weekly (requer weekday) | monthly (requer day) |\n"
+        "every_Xm (ex: every_2m, every_30m) | every_Xh (ex: every_6h) | every_Xd (ex: every_3d)\n"
+        "NUNCA diga que uma frequência não é suportada sem verificar esta lista.\n\n"
+        "Para listar, editar ou deletar tarefas existentes, use gerenciar_agenda normalmente."
     )
 
-    orq_tools = [get_current_datetime, calcular_periodo, consultar_analista, rag]
+    orq_tools = [
+        get_current_datetime, calcular_periodo, consultar_analista, rag,
+        gerar_pdf, gerar_excel,
+        gerenciar_agenda,
+        set_task_instructions,
+    ]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 
@@ -949,7 +1074,7 @@ def _build_orchestrator(llm, checkpointer=None):
 
 def init_multi_agent(project: str, location: str, model_name: str) -> None:
     """Inicializa orquestrador e sub-agente. Chamado no startup do FastAPI."""
-    global _orchestrator_graph, _sub_agent_graph, _checkpointer
+    global _orchestrator_graph, _sub_agent_graph, _scheduler_agent_graph, _checkpointer
     try:
         from langchain_google_vertexai import ChatVertexAI
         from langgraph.checkpoint.sqlite import SqliteSaver
@@ -968,8 +1093,9 @@ def init_multi_agent(project: str, location: str, model_name: str) -> None:
 
         chart_store.init_chart_store(DB_PATH)
         _sub_agent_graph = _build_sub_agent(llm)
+        _scheduler_agent_graph = _build_scheduler_agent(llm)
         _orchestrator_graph = _build_orchestrator(llm, _checkpointer)
-        logger.info("Multi-agente inicializado: orquestrador + sub-agente analista")
+        logger.info("Multi-agente inicializado: orquestrador + analista + scheduler")
     except Exception:
         import traceback
         logger.warning("Falha ao inicializar multi-agente:\n%s", traceback.format_exc())

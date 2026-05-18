@@ -1,0 +1,16 @@
+{
+  "task_id": "003",
+  "task_name": "Produção do dia",
+  "run_at": "2026-05-17T21:16:33.428379",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/1b90c8c5-6a60-4354-8ffe-fea6d29691be"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "08:00"
+  }
+}

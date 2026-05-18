@@ -1,0 +1,1 @@
+O PDF "Relatório de Produção Diária" foi gerado com sucesso. Você pode acessá-lo aqui: [📄 Abrir relatório PDF](http://localhost:8000/pdf/46466724-6568-4b36-8c6c-e4c08837a860)

@@ -10,6 +10,7 @@ import base64
 import sqlite3
 import threading
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 _conn: sqlite3.Connection | None = None
@@ -48,14 +49,18 @@ def init_chart_store(db_path: Path) -> None:
     _conn.commit()
 
 
+def _now() -> str:
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
 def save_chart(session_id: str, png_bytes: bytes) -> str:
     if _conn is None:
         raise RuntimeError("chart_store não inicializado.")
     chart_id = str(uuid.uuid4())
     with _lock:
         _conn.execute(
-            "INSERT INTO charts (chart_id, session_id, png_blob) VALUES (?, ?, ?)",
-            (chart_id, session_id, png_bytes),
+            "INSERT INTO charts (chart_id, session_id, png_blob, created_at) VALUES (?, ?, ?, ?)",
+            (chart_id, session_id, png_bytes, _now()),
         )
         _conn.commit()
     return chart_id
@@ -67,8 +72,8 @@ def save_pdf(session_id: str, pdf_bytes: bytes, filename: str) -> str:
     pdf_id = str(uuid.uuid4())
     with _lock:
         _conn.execute(
-            "INSERT INTO pdfs (pdf_id, session_id, pdf_blob, filename) VALUES (?, ?, ?, ?)",
-            (pdf_id, session_id, pdf_bytes, filename),
+            "INSERT INTO pdfs (pdf_id, session_id, pdf_blob, filename, created_at) VALUES (?, ?, ?, ?, ?)",
+            (pdf_id, session_id, pdf_bytes, filename, _now()),
         )
         _conn.commit()
     return pdf_id
@@ -92,8 +97,8 @@ def save_excel(session_id: str, excel_bytes: bytes, filename: str) -> str:
     excel_id = str(uuid.uuid4())
     with _lock:
         _conn.execute(
-            "INSERT INTO excels (excel_id, session_id, excel_blob, filename) VALUES (?, ?, ?, ?)",
-            (excel_id, session_id, excel_bytes, filename),
+            "INSERT INTO excels (excel_id, session_id, excel_blob, filename, created_at) VALUES (?, ?, ?, ?, ?)",
+            (excel_id, session_id, excel_bytes, filename, _now()),
         )
         _conn.commit()
     return excel_id
@@ -109,6 +114,53 @@ def get_excel(excel_id: str) -> tuple[bytes, str] | None:
     if not row:
         return None
     return row[0], row[1]
+
+
+def list_artifacts() -> list[dict]:
+    """Retorna artefatos ordenados por data desc.
+
+    Gráficos de sessões que também produziram um PDF são omitidos — eles já
+    estão embutidos no PDF e não precisam aparecer como item separado.
+    """
+    if _conn is None:
+        return []
+    with _lock:
+        charts = _conn.execute(
+            "SELECT chart_id, session_id, created_at FROM charts ORDER BY created_at DESC"
+        ).fetchall()
+        pdfs = _conn.execute(
+            "SELECT pdf_id, session_id, filename, created_at FROM pdfs ORDER BY created_at DESC"
+        ).fetchall()
+        excels = _conn.execute(
+            "SELECT excel_id, session_id, filename, created_at FROM excels ORDER BY created_at DESC"
+        ).fetchall()
+
+    sessions_with_pdf = {row[1] for row in pdfs}
+
+    result = []
+    for row in charts:
+        if row[1] not in sessions_with_pdf:
+            result.append({"type": "chart", "id": row[0], "session_id": row[1], "created_at": row[2]})
+    for row in pdfs:
+        result.append({"type": "pdf", "id": row[0], "session_id": row[1], "filename": row[2], "created_at": row[3]})
+    for row in excels:
+        result.append({"type": "excel", "id": row[0], "session_id": row[1], "filename": row[2], "created_at": row[3]})
+
+    result.sort(key=lambda x: x["created_at"], reverse=True)
+    return result
+
+
+def delete_artifact(artifact_type: str, artifact_id: str) -> bool:
+    if _conn is None:
+        return False
+    table_col = {"chart": ("charts", "chart_id"), "pdf": ("pdfs", "pdf_id"), "excel": ("excels", "excel_id")}
+    if artifact_type not in table_col:
+        return False
+    table, col = table_col[artifact_type]
+    with _lock:
+        cur = _conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (artifact_id,))
+        _conn.commit()
+    return cur.rowcount > 0
 
 
 def get_chart_b64(chart_id: str) -> str | None:

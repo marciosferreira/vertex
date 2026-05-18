@@ -1,0 +1,16 @@
+{
+  "task_id": "007",
+  "task_name": "Relatório de Produção Diária Acumulada",
+  "run_at": "2026-05-17T21:18:24.291071",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/9085e62b-215f-4153-b4ec-5c82f9c37a21"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "21:15"
+  }
+}

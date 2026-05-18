@@ -1,0 +1,1 @@
+O relatório de produção diária para 17/05/2026 foi gerado com sucesso. Você pode acessá-lo aqui: [📄 Abrir relatório PDF](http://localhost:8000/pdf/b14bda0b-ebe7-49d0-9037-ab2b7ec4c0f5)

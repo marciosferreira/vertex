@@ -1,0 +1,23 @@
+{
+  "task_id": "002",
+  "task_name": "Relatório de Produção de Celulares",
+  "run_at": "2026-05-17T18:40:50.178752",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/d08b5adc-c1e6-4b42-bc2c-175bf98b8ed4"
+  ],
+  "email": {
+    "to": "marciosferreira@yahoo.com.br",
+    "subject": "Relatório de Produção de Celulares — 2026-05-17 18:40",
+    "body": "Segue em anexo o relatório: Relatório de Produção de Celulares.",
+    "attachments": [
+      "http://localhost:8000/pdf/d08b5adc-c1e6-4b42-bc2c-175bf98b8ed4"
+    ]
+  },
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

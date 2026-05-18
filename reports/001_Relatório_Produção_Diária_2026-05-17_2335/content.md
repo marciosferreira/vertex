@@ -1,0 +1,1 @@
+O relatório de produção diária foi gerado com sucesso: [📄 Abrir relatório PDF](http://localhost:8000/pdf/4d3da0ab-e3b4-4081-b8dd-d0c067820912)

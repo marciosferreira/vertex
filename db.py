@@ -198,6 +198,23 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_hourly_date  ON hourly_production(date);
             CREATE INDEX IF NOT EXISTS idx_hourly_shift ON hourly_production(shift);
             CREATE INDEX IF NOT EXISTS idx_hourly_model ON hourly_production(model);
+
+            -- Tarefas agendadas
+            CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                id           TEXT PRIMARY KEY,
+                name         TEXT NOT NULL,
+                description  TEXT NOT NULL,
+                instructions TEXT,
+                frequency    TEXT NOT NULL,
+                time         TEXT,
+                weekday      TEXT,
+                day          TEXT,
+                email        TEXT,
+                status       TEXT NOT NULL DEFAULT 'pending_approval',
+                next_run     TEXT,
+                last_run     TEXT,
+                created_at   TEXT NOT NULL
+            );
         """)
         _seed(conn)
         conn.commit()

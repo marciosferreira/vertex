@@ -1,0 +1,1 @@
+O relatório de produção diária para 2026-05-17 foi gerado com sucesso. Você pode acessá-lo aqui: [📄 Abrir relatório PDF](http://localhost:8000/pdf/e2813f0f-5674-4bea-8e01-6a7b75b5e90f)

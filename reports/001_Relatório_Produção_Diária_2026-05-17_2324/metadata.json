@@ -1,0 +1,16 @@
+{
+  "task_id": "001",
+  "task_name": "Relatório Produção Diária",
+  "run_at": "2026-05-17T23:24:05.571593",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/e2813f0f-5674-4bea-8e01-6a7b75b5e90f"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

@@ -1,0 +1,1 @@
+Aqui está o relatório de produção diária: [📄 Abrir relatório PDF](http://localhost:8000/pdf/bfb46a76-fc4d-45bc-bec1-062c6b23911f)

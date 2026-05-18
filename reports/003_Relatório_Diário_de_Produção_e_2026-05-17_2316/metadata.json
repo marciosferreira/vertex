@@ -1,0 +1,14 @@
+{
+  "task_id": "003",
+  "task_name": "Relatório Diário de Produção e Defeitos",
+  "run_at": "2026-05-17T23:16:02.618402",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

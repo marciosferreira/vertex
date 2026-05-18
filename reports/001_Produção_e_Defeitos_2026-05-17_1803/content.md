@@ -1,0 +1,1 @@
+Segue o relatório de produção e defeitos referente ao dia 16/05/2026, com os gráficos solicitados: [📄 Abrir relatório PDF](http://localhost:8000/pdf/7eae439f-c3c0-4447-8605-f7715d6009f9)

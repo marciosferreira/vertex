@@ -1,0 +1,1 @@
+Não foi possível gerar o relatório. A consulta aos dados de produção dos modelos de celular falhou devido a um tempo limite na chamada da API. Por favor, tente novamente mais tarde.

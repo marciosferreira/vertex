@@ -1,0 +1,1 @@
+Aqui está o relatório de produção comparando todos os modelos de celular para hoje, 17/05/2026, com os dados brutos e o gráfico de barras: [📄 Abrir relatório PDF](http://localhost:8000/pdf/d08b5adc-c1e6-4b42-bc2c-175bf98b8ed4)

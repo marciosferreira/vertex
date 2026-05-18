@@ -16,8 +16,19 @@
         startOnLoad: true,
         theme: 'dark',
         securityLevel: 'loose',
-        flowchart: { nodeSpacing: 120, rankSpacing: 160, curve: 'basis' },
-        themeVariables: { fontSize: '20px', fontFamily: 'Inter, sans-serif' }
+        flowchart: { nodeSpacing: 50, rankSpacing: 80, curve: 'basis' },
+        themeVariables: {
+            fontSize: '18px',
+            fontFamily: 'Inter, sans-serif',
+            background: '#0B0F19',
+            mainBkg: '#1E293B',
+            nodeBorder: '#475569',
+            clusterBkg: '#0f1520',
+            clusterBorder: '#1e293b',
+            titleColor: '#F8FAFC',
+            edgeLabelBackground: '#0B0F19',
+            lineColor: '#475569'
+        }
     });
 </script>
 <style>
@@ -403,8 +414,11 @@
   .arq-card { border: 1px solid #1e293b; border-radius: 12px; background: #0f1520; padding: 24px; position: relative; overflow: hidden; }
   .arq-card-dark { border: 1px solid #0f172a; border-radius: 12px; background: #0B0F19; padding: 16px; }
   .mermaid-wrap { overflow-x: auto; }
-  .mermaid { zoom: 1.6; transform-origin: top left; }
-  .mermaid svg { height: auto !important; }
+  .mermaid svg { height: auto !important; min-width: 900px; background: transparent !important; }
+  .mermaid svg > rect:first-child { fill: transparent !important; }
+  .mermaid svg text { text-transform: none !important; font-size: 16px !important; }
+  .mermaid svg .label foreignObject { overflow: visible; }
+  .mermaid svg .label div { font-size: 16px !important; line-height: 1.4; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -444,9 +458,72 @@
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
       <span class="refresh-icon">↺</span> Atualizar
     </button>
+    <button class="refresh-btn" id="agendaBtn" onclick="openAgenda()" style="position:relative;gap:6px;">
+      🗓
+      <span id="agendaBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#6366f1;color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;letter-spacing:.04em;"></span>
+      Tarefas
+    </button>
+    <button class="refresh-btn" onclick="openArtifacts()" style="position:relative;gap:6px;">
+      🗂
+      Artifacts
+    </button>
     <span class="last-update" id="lastUpdate"></span>
   </div>
 </header>
+
+<!-- ── Slide-over: Agenda de Relatórios ─────────────────────────────────── -->
+<div id="agendaOverlay" onclick="closeAgenda()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
+<aside id="agendaPanel" style="display:none;position:fixed;top:0;right:0;height:100vh;width:420px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
+  <!-- Header do painel -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6366f1;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">Relatórios Agendados</div>
+      <div style="font-size:15px;font-weight:600;color:#f8fafc;">Tarefas</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="loadAgenda()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:5px 10px;font-size:12px;cursor:pointer;">↺ Atualizar</button>
+      <button onclick="closeAgenda()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+
+  <!-- Lista de tasks -->
+  <div id="agendaList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>
+  </div>
+
+  <!-- Footer -->
+  <div style="padding:16px 24px;border-top:1px solid #1e293b;flex-shrink:0;">
+    <button onclick="closeAgenda();document.getElementById('chatInput')?.focus()" style="width:100%;padding:10px;background:#312e81;border:1px solid #4338ca;border-radius:8px;color:#e0e7ff;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
+      + Nova tarefa via chat
+    </button>
+  </div>
+</aside>
+
+<!-- ── Slide-over: Artifacts ────────────────────────────────────────────── -->
+<div id="artifactsOverlay" onclick="closeArtifacts()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
+<aside id="artifactsPanel" style="display:none;position:fixed;top:0;right:0;height:100vh;width:480px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#0ea5e9;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">PDFs · Gráficos · Excel</div>
+      <div style="font-size:15px;font-weight:600;color:#f8fafc;">Artifacts</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="loadArtifacts()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:5px 10px;font-size:12px;cursor:pointer;">↺ Atualizar</button>
+      <button onclick="closeArtifacts()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+  <!-- Filtro de origem -->
+  <div style="display:flex;gap:8px;padding:12px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <button id="af-all"  onclick="setArtifactFilter('all')"  style="flex:1;padding:5px;border-radius:6px;border:1px solid #6366f1;background:#312e81;color:#e0e7ff;font-size:11px;cursor:pointer;">Todos</button>
+    <button id="af-task" onclick="setArtifactFilter('task')" style="flex:1;padding:5px;border-radius:6px;border:1px solid #1e293b;background:none;color:#64748b;font-size:11px;cursor:pointer;">Tarefas</button>
+    <button id="af-chat" onclick="setArtifactFilter('chat')" style="flex:1;padding:5px;border-radius:6px;border:1px solid #1e293b;background:none;color:#64748b;font-size:11px;cursor:pointer;">Chat</button>
+  </div>
+  <!-- Lista -->
+  <div id="artifactsList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;">
+    <div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>
+  </div>
+</aside>
 
 <div class="page">
 
@@ -817,7 +894,7 @@ async function api(path) {
 }
 
 function rangeToDates(range) {
-  const fmt = d => d.toISOString().slice(0, 10);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const today = new Date();
   if (range === 'today') return `from=${fmt(today)}&to=${fmt(today)}`;
   const days = { '7d': 7, '14d': 14, '30d': 30 }[range] || 7;
@@ -1481,12 +1558,17 @@ initDashboard();
                 <div class="mermaid">
 graph LR
     User([Usuário]) --> Orch[Orquestrador LangGraph]
+
     subgraph Orquestrador
         Orch --> T1[get_current_datetime]
         Orch --> T2[calcular_periodo]
         Orch --> T3[consultar_analista]
-        Orch --> T4[RAG]
+        Orch --> T4[rag]
+        Orch --> T5[gerar_pdf]
+        Orch --> T6[gerar_excel]
+        Orch --> T7[gerenciar_agenda]
     end
+
     T3 --> Sub[Sub-Agente Analista]
     subgraph SubGrafo[Sub-Grafo Analista]
         Sub --> S1[read_skill]
@@ -1496,13 +1578,30 @@ graph LR
         Sub --> S5[gerar_pdf]
         Sub --> S6[gerar_excel]
     end
+
+    T7 --> Sch[Sub-Agente Scheduler]
+    subgraph SchGrafo[Sub-Grafo Scheduler]
+        Sch --> SC1[schedule_task]
+        Sch --> SC2[list_scheduled_tasks]
+        Sch --> SC3[delete_scheduled_task]
+    end
+
+    SC1 -.->|escreve| MD[(tasks.md)]
+    SC2 -.->|lê| MD
+    SC3 -.->|deleta| MD
+    MD -.->|daemon horário| Reports[/📧 email + reports/]
+
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
     classDef highlight fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
-    class Orch,Sub highlight;
+    classDef storage fill:#0F2027,stroke:#0EA5E9,stroke-width:1px,color:#7DD3FC;
+    class Orch,Sub,Sch highlight;
+    class MD storage;
+    classDef email fill:#0F2027,stroke:#22C55E,stroke-width:1px,color:#86EFAC;
+    class Reports email;
                 </div>
             </div>
             <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-                O orquestrador <strong>não sabe analisar dados</strong> (só sabe a quem perguntar). O sub-agente <strong>não tem acesso ao histórico global</strong> (só recebe a tarefa delegada).
+                O orquestrador <strong>não sabe analisar dados nem gerenciar agenda</strong> (só sabe a quem delegar). Cada sub-agente é isolado: o analista acessa APIs e banco; o scheduler lê e escreve <code>tasks.md</code>. O daemon verifica a agenda a cada hora <strong>sem LLM</strong> e salva os relatórios gerados em <code>reports/</code>.
             </p>
         </section>
 
@@ -1742,6 +1841,240 @@ graph LR
             }
         }
     });
+</script>
+
+<script>
+// ── Agenda slide-over ────────────────────────────────────────────────────────
+
+const FREQ_LABELS = {
+  once: 'Única vez', daily: 'Diária', weekly: 'Semanal',
+  monthly: 'Mensal',
+};
+function freqLabel(t) {
+  const f = t.frequency || '';
+  const time = t.time || '';
+  const mM = f.match(/^every_(\d+)m$/);
+  const mH = f.match(/^every_(\d+)h$/);
+  const mD = f.match(/^every_(\d+)d$/);
+  if (mM) return `A cada ${mM[1]} min`;
+  if (mH) return `A cada ${mH[1]}h`;
+  if (mD) return `A cada ${mD[1]} dias`;
+  if (f === 'weekly') {
+    const wdPt = {monday:'Segunda',tuesday:'Terça',wednesday:'Quarta',thursday:'Quinta',friday:'Sexta',saturday:'Sábado',sunday:'Domingo'};
+    return `Semanal · ${wdPt[t.weekday] || t.weekday} · ${time}`;
+  }
+  if (f === 'monthly') return `Mensal · dia ${t.day} · ${time}`;
+  if (f === 'daily')   return `Diária · ${time}`;
+  if (f === 'once')    return `Única vez · ${time}`;
+  return f;
+}
+
+function statusBadge(status) {
+  const map = {
+    active:    ['#166534','#4ade80','Ativa'],
+    error:     ['#7f1d1d','#f87171','Erro'],
+    completed: ['#1e3a5f','#60a5fa','Concluída'],
+    cancelled: ['#292524','#78716c','Cancelada'],
+  };
+  const [bg, color, label] = map[status] || ['#1e293b','#94a3b8', status];
+  return `<span style="background:${bg};color:${color};font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;padding:2px 8px;border-radius:99px;border:1px solid ${color}33;">${label}</span>`;
+}
+
+function renderTaskCard(t) {
+  const desc = t.description || '';
+  return `
+  <div style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:16px;position:relative;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6366f1;font-weight:700;">[${t.id}]</span>
+        <span style="font-size:13px;font-weight:600;color:#f1f5f9;">${t.name || '—'}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        ${statusBadge(t.status)}
+        <button onclick="deleteTask('${t.id}')" title="Remover tarefa" style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#f87171';this.style.color='#f87171'" onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">✕</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">FREQUÊNCIA</div>
+        <div style="font-size:12px;color:#94a3b8;">${freqLabel(t)}</div>
+      </div>
+      <div>
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">PRÓXIMA EXEC.</div>
+        <div style="font-size:12px;color:#38bdf8;">${t.next_run || '—'}</div>
+      </div>
+      ${t.last_run ? `<div>
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">ÚLTIMA EXEC.</div>
+        <div style="font-size:12px;color:#64748b;">${t.last_run}</div>
+      </div>` : ''}
+      ${t.email ? `<div>
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">EMAIL</div>
+        <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${t.email}</div>
+      </div>` : ''}
+    </div>
+    <div style="font-size:11px;color:#475569;line-height:1.5;border-top:1px solid #1e293b;padding-top:8px;word-break:break-word;">${desc}</div>
+  </div>`;
+}
+
+async function loadAgenda() {
+  const list = document.getElementById('agendaList');
+  list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
+  try {
+    const res = await fetch('/tasks');
+    const tasks = await res.json();
+    const active = tasks.filter(t => t.status !== 'cancelled');
+    // badge no botão
+    const badge = document.getElementById('agendaBadge');
+    const activeCount = tasks.filter(t => t.status === 'active').length;
+    if (activeCount > 0) { badge.textContent = activeCount; badge.style.display = 'inline'; }
+    else { badge.style.display = 'none'; }
+    // renderiza
+    if (active.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhuma tarefa agendada.<br><br>Use o chat para criar um relatório agendado ou recorrente e recebê-lo por email.</div>';
+    } else {
+      list.innerHTML = active.map(renderTaskCard).join('');
+    }
+  } catch(e) {
+    list.innerHTML = '<div style="text-align:center;color:#f87171;padding:40px 0;font-size:13px;">Erro ao carregar tarefas.</div>';
+  }
+}
+
+async function deleteTask(id) {
+  if (!confirm(`Remover tarefa [${id}]?`)) return;
+  await fetch(`/tasks/${id}`, { method: 'DELETE' });
+  loadAgenda();
+}
+
+function openAgenda() {
+  document.getElementById('agendaOverlay').style.display = 'block';
+  const panel = document.getElementById('agendaPanel');
+  panel.style.display = 'flex';
+  requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
+  loadAgenda();
+}
+
+function closeAgenda() {
+  const panel = document.getElementById('agendaPanel');
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(() => {
+    document.getElementById('agendaOverlay').style.display = 'none';
+    panel.style.display = 'none';
+  }, 260);
+}
+
+// ── Artifacts panel ─────────────────────────────────────────────────────────
+
+let _allArtifacts = [];
+let _artifactFilter = 'all';
+
+const ARTIFACT_ICONS = { pdf: '📄', chart: '📈', excel: '📊' };
+const ARTIFACT_LABELS = { pdf: 'PDF', chart: 'Gráfico', excel: 'Excel' };
+
+function _originBadge(a) {
+  if (a.origin === 'task') {
+    return `<span style="background:#1e3a5f;color:#60a5fa;font-size:9px;font-family:'JetBrains Mono',monospace;padding:2px 7px;border-radius:99px;border:1px solid #1d4ed833;">Tarefa ${a.task_id}</span>`;
+  }
+  return `<span style="background:#1a2e1a;color:#4ade80;font-size:9px;font-family:'JetBrains Mono',monospace;padding:2px 7px;border-radius:99px;border:1px solid #16a34a33;">Chat</span>`;
+}
+
+function _artifactUrl(a) {
+  if (a.type === 'pdf')   return `/pdf/${a.id}`;
+  if (a.type === 'excel') return `/excel/${a.id}`;
+  if (a.type === 'chart') return `/chart/${a.id}`;
+}
+
+function renderArtifact(a) {
+  const dt = a.created_at ? new Date(a.created_at).toLocaleString('pt-BR') : '—';
+  const name = a.filename || ARTIFACT_LABELS[a.type];
+  const url = _artifactUrl(a);
+  const preview = a.type === 'chart'
+    ? `<img src="${url}" style="width:100%;border-radius:6px;margin-top:8px;border:1px solid #1e293b;" loading="lazy"/>`
+    : '';
+  return `
+  <div style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <span style="font-size:18px;">${ARTIFACT_ICONS[a.type]}</span>
+        <div style="min-width:0;">
+          <div style="font-size:12px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+          <div style="font-size:10px;color:#475569;margin-top:1px;">${dt}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        ${_originBadge(a)}
+        ${url ? `<a href="${url}" target="_blank" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#38bdf8;padding:3px 8px;font-size:11px;text-decoration:none;">Abrir</a>` : ''}
+        <button onclick="deleteArtifact('${a.type}','${a.id}')" title="Deletar" style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;" onmouseover="this.style.borderColor='#f87171';this.style.color='#f87171'" onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">✕</button>
+      </div>
+    </div>
+    ${preview}
+  </div>`;
+}
+
+function setArtifactFilter(f) {
+  _artifactFilter = f;
+  ['all','task','chat'].forEach(k => {
+    const btn = document.getElementById(`af-${k}`);
+    const active = k === f;
+    btn.style.background = active ? '#312e81' : 'none';
+    btn.style.borderColor = active ? '#6366f1' : '#1e293b';
+    btn.style.color = active ? '#e0e7ff' : '#64748b';
+  });
+  renderArtifactList();
+}
+
+function renderArtifactList() {
+  const list = document.getElementById('artifactsList');
+  const filtered = _artifactFilter === 'all' ? _allArtifacts : _allArtifacts.filter(a => a.origin === _artifactFilter);
+  if (!filtered.length) {
+    list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum artifact encontrado.</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(renderArtifact).join('');
+}
+
+async function loadArtifacts() {
+  const list = document.getElementById('artifactsList');
+  list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
+  try {
+    const res = await fetch('/artifacts');
+    _allArtifacts = await res.json();
+    renderArtifactList();
+  } catch(e) {
+    list.innerHTML = '<div style="text-align:center;color:#f87171;padding:40px 0;font-size:13px;">Erro ao carregar artifacts.</div>';
+  }
+}
+
+async function deleteArtifact(type, id) {
+  if (!confirm(`Deletar este ${ARTIFACT_LABELS[type]}?`)) return;
+  await fetch(`/artifacts/${type}/${id}`, { method: 'DELETE' });
+  loadArtifacts();
+}
+
+function openArtifacts() {
+  document.getElementById('artifactsOverlay').style.display = 'block';
+  const panel = document.getElementById('artifactsPanel');
+  panel.style.display = 'flex';
+  requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
+  loadArtifacts();
+}
+
+function closeArtifacts() {
+  const panel = document.getElementById('artifactsPanel');
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(() => {
+    document.getElementById('artifactsOverlay').style.display = 'none';
+    panel.style.display = 'none';
+  }, 260);
+}
+
+// carrega badge ao iniciar
+document.addEventListener('DOMContentLoaded', () => {
+  fetch('/tasks').then(r => r.json()).then(tasks => {
+    const n = tasks.filter(t => t.status === 'active').length;
+    const badge = document.getElementById('agendaBadge');
+    if (n > 0) { badge.textContent = n; badge.style.display = 'inline'; }
+  }).catch(() => {});
+});
 </script>
 
 </body>

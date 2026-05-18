@@ -1,0 +1,16 @@
+{
+  "task_id": "002",
+  "task_name": "Relatório da produção acumulada do dia, atualizado a cada dois minutos",
+  "run_at": "2026-05-17T21:16:16.692805",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/f68dcaec-2b48-4a44-929d-e1b83fcba2e7"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "21:02"
+  }
+}

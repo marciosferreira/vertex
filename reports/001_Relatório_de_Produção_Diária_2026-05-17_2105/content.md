@@ -1,0 +1,1 @@
+Para criar a tarefa agendada, preciso que você me forneça uma breve descrição do que a tarefa fará. Por exemplo: "Criar tarefa 'Relatório de Produção Diária', frequência diária, hora 08:00, descrição 'Gerar relatório da produção diária'."

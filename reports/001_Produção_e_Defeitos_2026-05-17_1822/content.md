@@ -1,0 +1,1 @@
+Houve um erro ao gerar o PDF: "Not enough horizontal space to render a single character". Isso pode ser devido a um problema de formatação no conteúdo ao tentar gerar o arquivo. Os gráficos foram gerados com sucesso, mas não pude incluí-los no PDF.

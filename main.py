@@ -49,6 +49,7 @@ import json
 import threading
 from sse_starlette.sse import EventSourceResponse
 from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent
+from scheduler.daemon import scheduler_loop
 import chart_store as cs
 
 _CHART_RE = re.compile(r'\[chart:([a-f0-9\-]{36})\]')
@@ -187,6 +188,7 @@ async def startup():
     if delta:
         logger.info("Date shift inicial: +%d dia(s)", delta)
     asyncio.create_task(_daily_date_shifter())
+    asyncio.create_task(scheduler_loop())
 
 
 def default_range() -> tuple[str, str]:
@@ -321,6 +323,81 @@ async def chat_stream(request: Request, message: str, session_id: str = "default
 def root():
     html = Path(__file__).parent / "mfg-dashboard.html"
     return FileResponse(html, media_type="text/html")
+
+
+# ── agenda ────────────────────────────────────────────────────────────────────
+
+@app.get("/tasks")
+def get_tasks():
+    """Retorna as tarefas agendadas do banco como JSON."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, description, frequency, time, weekday, day, "
+            "email, status, next_run, last_run, created_at "
+            "FROM scheduled_tasks ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.delete("/tasks/{task_id}")
+def delete_task_endpoint(task_id: str):
+    """Remove uma tarefa do banco pelo ID."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
+        conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+        conn.commit()
+    return {"ok": True, "deleted": task_id}
+
+
+@app.get("/artifacts")
+def get_artifacts():
+    """Lista todos os artefatos (PDFs, gráficos, Excel) com origem e data."""
+    import re as _re
+    artifacts = cs.list_artifacts()
+    for a in artifacts:
+        sid = a.get("session_id", "")
+        m = _re.match(r'^daemon_(\d+)_', sid)
+        if m:
+            a["origin"] = "task"
+            a["task_id"] = m.group(1)
+        else:
+            a["origin"] = "chat"
+            a["task_id"] = None
+    return artifacts
+
+
+@app.delete("/artifacts/{artifact_type}/{artifact_id}")
+def delete_artifact(artifact_type: str, artifact_id: str):
+    """Remove um artefato do banco pelo tipo e ID."""
+    ok = cs.delete_artifact(artifact_type, artifact_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Artefato não encontrado."})
+    return {"ok": True}
+
+
+@app.get("/reports/{task_id}")
+def get_reports_for_task(task_id: str):
+    """Lista os relatórios gerados para uma task, mais recente primeiro."""
+    reports_dir = Path(__file__).parent / "reports"
+    if not reports_dir.exists():
+        return []
+    results = []
+    for folder in sorted(reports_dir.iterdir(), reverse=True):
+        if not folder.is_dir() or not folder.name.startswith(f"{task_id}_"):
+            continue
+        meta_file = folder / "metadata.json"
+        meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
+        results.append({
+            "folder": folder.name,
+            "run_at": meta.get("run_at"),
+            "status": meta.get("status"),
+            "pdf_urls": meta.get("pdf_urls", []),
+        })
+    return results
 
 
 # ── produção ──────────────────────────────────────────────────────────────────

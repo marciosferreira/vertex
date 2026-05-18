@@ -1,0 +1,1 @@
+Aqui está o relatório de produção diária para 17/05/2026: [📄 Abrir relatório PDF](http://localhost:8000/pdf/730d668e-698d-4a2b-96a0-4652b8a1272e)

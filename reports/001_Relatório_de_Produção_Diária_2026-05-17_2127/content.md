@@ -1,0 +1,1 @@
+As instruções para a tarefa **004** foram definidas com sucesso. A tarefa está ativa e será executada diariamente às 21:27, gerando o reporte diário da produção conforme visualizado.

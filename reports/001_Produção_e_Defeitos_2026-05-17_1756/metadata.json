@@ -1,0 +1,13 @@
+{
+  "task_id": "001",
+  "task_name": "Produção e Defeitos",
+  "run_at": "2026-05-17T17:56:49.263462",
+  "status": "pending_send",
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "18:00"
+  }
+}
