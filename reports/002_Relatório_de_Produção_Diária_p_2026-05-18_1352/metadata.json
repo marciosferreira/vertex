@@ -1,0 +1,14 @@
+{
+  "task_id": "002",
+  "task_name": "Relatório de Produção Diária por Modelo",
+  "run_at": "2026-05-18T13:52:31.726992",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

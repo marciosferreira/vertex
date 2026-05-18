@@ -75,24 +75,36 @@ def get_db():
         conn.close()
 
 
+def _shift_date_col(conn, table: str, col: str, delta: int) -> None:
+    """Shift a date column by delta days using a two-step update to avoid UNIQUE conflicts."""
+    pad = 10000
+    conn.execute(f"UPDATE {table} SET {col} = date({col}, '+{delta + pad} days')")
+    conn.execute(f"UPDATE {table} SET {col} = date({col}, '-{pad} days')")
+
+
 def shift_dates_to_today() -> int:
-    """Shift all dates so max(date) == today. Returns number of days shifted (0 if already up-to-date)."""
+    """Shift each table individually so its max(date) == today. Returns max days shifted."""
+    today = date.today()
+    max_delta = 0
     with get_db() as conn:
-        row = conn.execute("SELECT MAX(date) as d FROM production").fetchone()
-        if not row or not row["d"]:
-            return 0
-        delta = (date.today() - date.fromisoformat(row["d"])).days
-        if delta <= 0:
-            return 0
-        conn.executescript(f"""
-            UPDATE production        SET date     = date(date,     '+{delta} days');
-            UPDATE defects           SET date     = date(date,     '+{delta} days');
-            UPDATE metrics           SET date     = date(date,     '+{delta} days');
-            UPDATE hourly_production SET date     = date(date,     '+{delta} days');
-            UPDATE alerts            SET datetime = datetime(datetime, '+{delta} days');
-        """)
+        for table in ("production", "defects", "metrics", "hourly_production"):
+            row = conn.execute(f"SELECT MAX(date) as d FROM {table}").fetchone()
+            if not row or not row["d"]:
+                continue
+            delta = (today - date.fromisoformat(row["d"])).days
+            if delta > 0:
+                _shift_date_col(conn, table, "date", delta)
+                max_delta = max(max_delta, delta)
+        row = conn.execute("SELECT MAX(datetime) as d FROM alerts").fetchone()
+        if row and row["d"]:
+            delta = (today - date.fromisoformat(row["d"][:10])).days
+            if delta > 0:
+                pad = 10000
+                conn.execute(f"UPDATE alerts SET datetime = datetime(datetime, '+{delta + pad} days')")
+                conn.execute(f"UPDATE alerts SET datetime = datetime(datetime, '-{pad} days')")
+                max_delta = max(max_delta, delta)
         conn.commit()
-        return delta
+    return max_delta
 
 
 def init_db():
@@ -213,8 +225,23 @@ def init_db():
                 status       TEXT NOT NULL DEFAULT 'pending_approval',
                 next_run     TEXT,
                 last_run     TEXT,
-                created_at   TEXT NOT NULL
+                created_at   TEXT NOT NULL,
+                retry_count  INTEGER NOT NULL DEFAULT 0,
+                max_retries  INTEGER NOT NULL DEFAULT 3
             );
+
+            -- Histórico de execuções de cada tarefa
+            CREATE TABLE IF NOT EXISTS task_runs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id     TEXT    NOT NULL,
+                started_at  TEXT    NOT NULL,
+                ended_at    TEXT,
+                status      TEXT    NOT NULL DEFAULT 'running',
+                output      TEXT,
+                error       TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_task_runs_task_id ON task_runs(task_id);
+            CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
         """)
         _seed(conn)
         conn.commit()

@@ -45,9 +45,11 @@ import chart_store
 from scheduler.tools import (
     schedule_task,
     set_task_instructions,
+    get_task_instructions,
     list_scheduled_tasks,
     delete_scheduled_task,
     update_scheduled_task,
+    toggle_pause_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,9 +197,11 @@ _TOOL_LABELS: dict[str, str] = {
     "gerenciar_agenda":         "🗓️ Gerenciando agenda de relatórios",
     "schedule_task":            "🗓️ Agendando tarefa",
     "set_task_instructions":    "📝 Salvando instruções da tarefa",
+    "get_task_instructions":    "🔍 Lendo instruções da tarefa",
     "list_scheduled_tasks":     "📋 Listando tarefas agendadas",
     "delete_scheduled_task":    "🗑️ Removendo tarefa agendada",
     "update_scheduled_task":    "✏️ Editando tarefa agendada",
+    "toggle_pause_task":        "⏸️ Pausando/retomando tarefa",
 }
 
 
@@ -930,7 +934,8 @@ def _build_scheduler_agent(llm):
         "- set_task_instructions → define/substitui as instruções de execução de uma tarefa\n"
         "- list_scheduled_tasks  → lista tarefas (mostra só name + description ao usuário)\n"
         "- delete_scheduled_task → remove uma tarefa pelo ID\n"
-        "- update_scheduled_task → edita name, description, frequency, time, email, weekday, day\n\n"
+        "- update_scheduled_task → edita name, description, frequency, time, email, weekday, day\n"
+        "- toggle_pause_task     → pausa uma tarefa ativa ou retoma uma tarefa pausada\n\n"
         "## Campos importantes\n"
         "- description: texto curto e legível que descreve o que a tarefa faz. "
         "Aparece na listagem para o usuário. Ex: 'Relatório semanal de OEE toda segunda às 8h.'\n"
@@ -945,16 +950,25 @@ def _build_scheduler_agent(llm):
         "## Frequências aceitas\n"
         "once | daily | weekly (requer weekday) | monthly (requer day) |\n"
         "every_Xm (ex: every_2m) | every_Xh (ex: every_6h) | every_Xd (ex: every_3d)\n\n"
-        "## Salvar instruções via instrução textual\n"
-        "Se a instrução recebida começar com 'set_instructions task [ID]:', extraia o ID\n"
-        "e o texto após ':' e chame set_task_instructions(task_id=ID, instructions=texto).\n\n"
+        "## REGRA CRÍTICA — criar vs editar\n"
+        "schedule_task SOMENTE quando o usuário pedir explicitamente para CRIAR uma tarefa nova.\n"
+        "Para qualquer outra operação sobre tarefa existente (salvar instructions, editar campos,\n"
+        "deletar), use a tool correspondente: set_task_instructions, update_scheduled_task ou\n"
+        "delete_scheduled_task. NUNCA chame schedule_task quando receber um task_id existente.\n\n"
+        "## Salvar instruções\n"
+        "Se a instrução recebida começar com 'set_instructions task [ID]:' ou pedir para\n"
+        "salvar/definir instructions de uma tarefa existente: extraia o ID e o texto e chame\n"
+        "set_task_instructions(task_id=ID, instructions=texto). Nada mais.\n\n"
+        "## Ler instruções\n"
+        "Se a instrução recebida começar com 'get_instructions task [ID]': chame\n"
+        "get_task_instructions(task_id=ID) e retorne o resultado completo.\n\n"
         "## REGRA DE RESPOSTA — OBRIGATÓRIA\n"
         "Sempre retorne o output LITERAL e COMPLETO da tool na sua resposta final.\n"
         "NUNCA resuma, NUNCA substitua por frases como 'concluído' ou 'listagem feita'.\n"
         "O orquestrador depende do conteúdo exato para repassar ao usuário."
     )
 
-    sch_tools = [schedule_task, set_task_instructions, list_scheduled_tasks, delete_scheduled_task, update_scheduled_task]
+    sch_tools = [schedule_task, set_task_instructions, get_task_instructions, list_scheduled_tasks, delete_scheduled_task, update_scheduled_task, toggle_pause_task]
     llm_sch = llm.bind_tools(sch_tools)
     no_sch_tools = ToolNode(sch_tools)
 
@@ -1025,17 +1039,29 @@ def _build_orchestrator(llm, checkpointer=None):
         "SEM fazer perguntas ao usuário — infira nome e descrição a partir do contexto:\n"
         "1. Chame gerenciar_agenda para criar a tarefa. Gere nome e descrição você mesmo\n"
         "   com base no pedido do usuário. NUNCA peça ao usuário para fornecer descrição.\n"
-        "2. Execute o relatório/análise IMEDIATAMENTE usando consultar_analista e/ou gerar_pdf,\n"
-        "   exatamente como o usuário descreveu. Isso serve como preview para o usuário revisar.\n"
+        "2. Execute a tarefa IMEDIATAMENTE exatamente como o usuário pediu — pode ser\n"
+        "   PDF (gerar_pdf), gráfico (consultar_analista), Excel (gerar_excel) ou qualquer\n"
+        "   combinação. Isso serve como preview para o usuário revisar.\n"
         "3. Chame set_task_instructions(task_id=ID, instructions='passo a passo do que foi\n"
-        "   feito no passo 2, incluindo parâmetros — período, filtros, tipo de gráfico, etc.').\n"
-        "4. Informe ao usuário que o relatório foi gerado, mostre o link e diga que essa\n"
-        "   será a estrutura executada automaticamente nos próximos agendamentos.\n\n"
+        "   feito no passo 2, incluindo parâmetros — período, filtros, tipo de saída, etc.').\n"
+        "4. Responda ao usuário EXATAMENTE neste formato, sem adicionar mais nada:\n"
+        "   'Tarefa **[ID]** criada. Resultado gerado: [link ou token do artefato gerado]\n\n"
+        "   Para ajustar, diga: **editar tarefa [ID]**'\n\n"
         "## Frequências suportadas — use exatamente estes valores\n"
         "once | daily | weekly (requer weekday) | monthly (requer day) |\n"
         "every_Xm (ex: every_2m, every_30m) | every_Xh (ex: every_6h) | every_Xd (ex: every_3d)\n"
         "NUNCA diga que uma frequência não é suportada sem verificar esta lista.\n\n"
-        "Para listar, editar ou deletar tarefas existentes, use gerenciar_agenda normalmente."
+        "## Edição de tarefa existente — fluxo obrigatório\n"
+        "Quando o usuário pedir para editar/ajustar uma tarefa (cor, layout, métricas, período,\n"
+        "qualquer detalhe do relatório), siga EXATAMENTE estes passos:\n"
+        "1. Chame gerenciar_agenda com 'get_instructions task [ID]' para obter as instructions atuais.\n"
+        "2. Execute novamente a tarefa incorporando o ajuste pedido.\n"
+        "3. Chame set_task_instructions(task_id=ID, instructions='novo passo a passo atualizado\n"
+        "   com o ajuste incorporado').\n"
+        "4. Responda EXATAMENTE neste formato:\n"
+        "   'Tarefa **[ID]** atualizada. Resultado: [link ou token do artefato gerado]\n\n"
+        "   Para novos ajustes, diga: **editar tarefa [ID]**'\n\n"
+        "Para listar ou deletar tarefas, use gerenciar_agenda normalmente."
     )
 
     orq_tools = [

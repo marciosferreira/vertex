@@ -1,0 +1,1 @@
+[📄 Abrir relatório PDF](http://localhost:8000/pdf/3adae2f2-72f0-403e-a31d-801cdeadcf4b)

@@ -1,0 +1,1 @@
+Aqui está o seu relatório em PDF com o gráfico da produção total do dia: [📄 Abrir relatório PDF](http://localhost:8000/pdf/a6eb3db9-ecc0-4b0a-a32c-67349f87b8dc)

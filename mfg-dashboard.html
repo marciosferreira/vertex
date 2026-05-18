@@ -519,6 +519,14 @@
     <button id="af-task" onclick="setArtifactFilter('task')" style="flex:1;padding:5px;border-radius:6px;border:1px solid #1e293b;background:none;color:#64748b;font-size:11px;cursor:pointer;">Tarefas</button>
     <button id="af-chat" onclick="setArtifactFilter('chat')" style="flex:1;padding:5px;border-radius:6px;border:1px solid #1e293b;background:none;color:#64748b;font-size:11px;cursor:pointer;">Chat</button>
   </div>
+  <!-- Toolbar de seleção -->
+  <div id="af-toolbar" style="display:none;align-items:center;justify-content:space-between;padding:8px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;background:#0d1829;">
+    <span id="af-sel-count" style="font-size:11px;color:#94a3b8;font-family:'JetBrains Mono',monospace;"></span>
+    <div style="display:flex;gap:8px;">
+      <button onclick="selectAllArtifacts()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:4px 10px;font-size:11px;cursor:pointer;" onmouseover="this.style.borderColor='#38bdf8';this.style.color='#38bdf8'" onmouseout="this.style.borderColor='#1e293b';this.style.color='#94a3b8'">Selecionar todos</button>
+      <button onclick="deleteSelectedArtifacts()" style="background:none;border:1px solid #7f1d1d;border-radius:6px;color:#f87171;padding:4px 10px;font-size:11px;cursor:pointer;" onmouseover="this.style.background='rgba(248,113,113,.1)'" onmouseout="this.style.background='none'">🗑 Deletar selecionados</button>
+    </div>
+  </div>
   <!-- Lista -->
   <div id="artifactsList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;">
     <div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>
@@ -1557,51 +1565,47 @@ initDashboard();
             <div class="bg-[#0B0F19] p-6 rounded-lg overflow-auto border border-slate-900 mermaid-wrap">
                 <div class="mermaid">
 graph LR
-    User([Usuário]) --> Orch[Orquestrador LangGraph]
+    User([Usuário]) --> Orch
 
-    subgraph Orquestrador
-        Orch --> T1[get_current_datetime]
-        Orch --> T2[calcular_periodo]
-        Orch --> T3[consultar_analista]
-        Orch --> T4[rag]
-        Orch --> T5[gerar_pdf]
-        Orch --> T6[gerar_excel]
-        Orch --> T7[gerenciar_agenda]
+    subgraph Orch[Orquestrador]
+        OT["consultar_analista · gerenciar_agenda<br/>set_task_instructions · gerar_pdf<br/>gerar_excel · rag · calcular_periodo"]
     end
 
-    T3 --> Sub[Sub-Agente Analista]
-    subgraph SubGrafo[Sub-Grafo Analista]
-        Sub --> S1[read_skill]
-        Sub --> S2[chamar_api]
-        Sub --> S3[executar_sql]
-        Sub --> S4[analisar_dataframe]
-        Sub --> S5[gerar_pdf]
-        Sub --> S6[gerar_excel]
+    Orch -->|delega análise| ANA
+    Orch -->|delega agenda| SCH
+
+    subgraph ANA[Sub-Agente Analista]
+        AT["executar_codigo · chamar_api<br/>gerar_pdf · gerar_excel"]
     end
 
-    T7 --> Sch[Sub-Agente Scheduler]
-    subgraph SchGrafo[Sub-Grafo Scheduler]
-        Sch --> SC1[schedule_task]
-        Sch --> SC2[list_scheduled_tasks]
-        Sch --> SC3[delete_scheduled_task]
+    subgraph SCH[Sub-Agente Scheduling]
+        ST["schedule_task · update_scheduled_task<br/>delete_scheduled_task · list_scheduled_tasks<br/>set_task_instructions"]
     end
 
-    SC1 -.->|escreve| MD[(tasks.md)]
-    SC2 -.->|lê| MD
-    SC3 -.->|deleta| MD
-    MD -.->|daemon horário| Reports[/📧 email + reports/]
+    ANA & SCH -->|lê / escreve| DB[("mfg.db")]
+
+    DB -->|"active · next_run ≤ now"| DAEMON
+
+    subgraph DAEMON["Daemon · 120s"]
+        D["instructions → prompt guiado<br/>description → fallback<br/>invoke_multi_agent()"]
+    end
+
+    DAEMON -->|"UPDATE last_run / next_run"| DB
+    DAEMON --> REP[/"reports/"/]
 
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
-    classDef highlight fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
+    classDef agent fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
     classDef storage fill:#0F2027,stroke:#0EA5E9,stroke-width:1px,color:#7DD3FC;
-    class Orch,Sub,Sch highlight;
-    class MD storage;
-    classDef email fill:#0F2027,stroke:#22C55E,stroke-width:1px,color:#86EFAC;
-    class Reports email;
+    classDef daemon fill:#1a2e1a,stroke:#22C55E,stroke-width:1px,color:#86EFAC;
+    classDef output fill:#1a1a2e,stroke:#a78bfa,stroke-width:1px,color:#c4b5fd;
+    class Orch,ANA,SCH agent;
+    class DB storage;
+    class DAEMON daemon;
+    class REP output;
                 </div>
             </div>
             <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-                O orquestrador <strong>não sabe analisar dados nem gerenciar agenda</strong> (só sabe a quem delegar). Cada sub-agente é isolado: o analista acessa APIs e banco; o scheduler lê e escreve <code>tasks.md</code>. O daemon verifica a agenda a cada hora <strong>sem LLM</strong> e salva os relatórios gerados em <code>reports/</code>.
+                O orquestrador coordena dois sub-agentes: o <strong>analista</strong> executa código Python e acessa a API REST; o <strong>scheduling</strong> gerencia a tabela <code>scheduled_tasks</code> no SQLite. <code>set_task_instructions</code> fica direto no orquestrador — ele é o único com contexto dos dois passos anteriores (criação + preview). Charts gerados durante um relatório são <strong>temporários</strong>: deletados automaticamente quando o PDF é salvo. O daemon verifica tarefas ativas a cada 120s sem LLM: usa as <code>instructions</code> validadas como guia ou a <code>description</code> como fallback.
             </p>
         </section>
 
@@ -1871,17 +1875,65 @@ function freqLabel(t) {
 
 function statusBadge(status) {
   const map = {
-    active:    ['#166534','#4ade80','Ativa'],
-    error:     ['#7f1d1d','#f87171','Erro'],
-    completed: ['#1e3a5f','#60a5fa','Concluída'],
-    cancelled: ['#292524','#78716c','Cancelada'],
+    active:           ['#166534','#4ade80','Ativa'],
+    running:          ['#0c2a4a','#38bdf8','Executando'],
+    error:            ['#7f1d1d','#f87171','Erro'],
+    completed:        ['#1e3a5f','#60a5fa','Concluída'],
+    cancelled:        ['#292524','#78716c','Cancelada'],
+    paused:           ['#292524','#a78bfa','Pausada'],
+    pending_approval: ['#2d1f00','#fb923c','Aguardando'],
   };
   const [bg, color, label] = map[status] || ['#1e293b','#94a3b8', status];
   return `<span style="background:${bg};color:${color};font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;padding:2px 8px;border-radius:99px;border:1px solid ${color}33;">${label}</span>`;
 }
 
+function _runDuration(r) {
+  if (!r.started_at || !r.ended_at) return null;
+  const secs = Math.round((new Date(r.ended_at) - new Date(r.started_at)) / 1000);
+  if (secs < 60) return `${secs}s`;
+  return `${Math.floor(secs/60)}m ${secs%60}s`;
+}
+
+function _runStatusDot(status) {
+  const c = { success:'#4ade80', error:'#f87171', running:'#38bdf8' }[status] || '#64748b';
+  const anim = status === 'running' ? 'animation:pulse 1.6s ease-in-out infinite;' : '';
+  return `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0;margin-top:3px;${anim}"></span>`;
+}
+
+function _runsSection(runs) {
+  if (!runs || runs.length === 0) return '';
+  const rows = runs.map(r => {
+    const dur  = _runDuration(r);
+    const time = r.started_at ? r.started_at.slice(0,16).replace('T',' ') : '—';
+    const errFull = (r.error || '').replace(/"/g, '&quot;');
+    const err  = r.error ? `<div title="${errFull}" style="font-size:10px;color:#f87171;margin-top:2px;word-break:break-all;cursor:help;">${r.error.slice(0,120)}${r.error.length>120?'…':''}</div>` : '';
+    return `
+    <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid #0f172a;">
+      ${_runStatusDot(r.status)}
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:#64748b;font-family:'JetBrains Mono',monospace;">${time}</span>
+          ${dur ? `<span style="font-size:10px;color:#475569;">${dur}</span>` : ''}
+          ${r.status==='running' ? `<span style="font-size:10px;color:#38bdf8;font-family:'JetBrains Mono',monospace;">em execução…</span>` : ''}
+        </div>
+        ${err}
+      </div>
+    </div>`;
+  }).join('');
+  return `
+  <div style="margin-top:10px;border-top:1px solid #1e293b;padding-top:8px;">
+    <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:6px;">ÚLTIMAS EXECUÇÕES</div>
+    <div style="max-height:160px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1e293b transparent;">
+      ${rows}
+    </div>
+  </div>`;
+}
+
 function renderTaskCard(t) {
   const desc = t.description || '';
+  const retryInfo = t.retry_count > 0
+    ? `<span style="font-size:10px;color:#fb923c;font-family:'JetBrains Mono',monospace;"> · tentativa ${t.retry_count}/${t.max_retries}</span>`
+    : '';
   return `
   <div style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:16px;position:relative;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
@@ -1890,7 +1942,15 @@ function renderTaskCard(t) {
         <span style="font-size:13px;font-weight:600;color:#f1f5f9;">${t.name || '—'}</span>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-        ${statusBadge(t.status)}
+        ${statusBadge(t.status)}${retryInfo}
+        ${(t.status === 'active' || t.status === 'paused') ? `
+        <button onclick="togglePauseTask('${t.id}', this)"
+          title="${t.status === 'paused' ? 'Retomar tarefa' : 'Pausar tarefa'}"
+          style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='#a78bfa';this.style.color='#a78bfa'"
+          onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">
+          ${t.status === 'paused' ? '▶' : '⏸'}
+        </button>` : ''}
         <button onclick="deleteTask('${t.id}')" title="Remover tarefa" style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#f87171';this.style.color='#f87171'" onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">✕</button>
       </div>
     </div>
@@ -1903,16 +1963,13 @@ function renderTaskCard(t) {
         <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">PRÓXIMA EXEC.</div>
         <div style="font-size:12px;color:#38bdf8;">${t.next_run || '—'}</div>
       </div>
-      ${t.last_run ? `<div>
-        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">ÚLTIMA EXEC.</div>
-        <div style="font-size:12px;color:#64748b;">${t.last_run}</div>
-      </div>` : ''}
-      ${t.email ? `<div>
+      ${t.email ? `<div style="grid-column:1/-1;">
         <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">EMAIL</div>
         <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${t.email}</div>
       </div>` : ''}
     </div>
     <div style="font-size:11px;color:#475569;line-height:1.5;border-top:1px solid #1e293b;padding-top:8px;word-break:break-word;">${desc}</div>
+    ${_runsSection(t.runs)}
   </div>`;
 }
 
@@ -1945,6 +2002,16 @@ async function deleteTask(id) {
   loadAgenda();
 }
 
+async function togglePauseTask(id, btn) {
+  btn.disabled = true;
+  try {
+    const res  = await fetch(`/tasks/${id}/toggle-pause`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) loadAgenda();
+    else { alert(data.message || 'Erro ao alterar status.'); btn.disabled = false; }
+  } catch { btn.disabled = false; }
+}
+
 function openAgenda() {
   document.getElementById('agendaOverlay').style.display = 'block';
   const panel = document.getElementById('agendaPanel');
@@ -1966,6 +2033,65 @@ function closeAgenda() {
 
 let _allArtifacts = [];
 let _artifactFilter = 'all';
+let _selectedArtifacts = new Set(); // "type:id"
+
+function _updateSelectionUI() {
+  const toolbar = document.getElementById('af-toolbar');
+  const count   = document.getElementById('af-sel-count');
+  const n = _selectedArtifacts.size;
+  if (n > 0) {
+    toolbar.style.display = 'flex';
+    count.textContent = `${n} selecionado${n > 1 ? 's' : ''}`;
+  } else {
+    toolbar.style.display = 'none';
+  }
+}
+
+function toggleArtifactSelect(key, checkbox) {
+  const cardId = 'acard-' + key.replace(':', '-');
+  const card   = document.getElementById(cardId);
+  if (checkbox.checked) {
+    _selectedArtifacts.add(key);
+    if (card) card.style.borderColor = '#6366f1';
+  } else {
+    _selectedArtifacts.delete(key);
+    if (card) card.style.borderColor = '#1e293b';
+  }
+  _updateSelectionUI();
+}
+
+function selectAllArtifacts() {
+  const visible = _artifactFilter === 'all' ? _allArtifacts : _allArtifacts.filter(a => a.origin === _artifactFilter);
+  const allSelected = visible.every(a => _selectedArtifacts.has(`${a.type}:${a.id}`));
+  visible.forEach(a => {
+    const key    = `${a.type}:${a.id}`;
+    const cardId = 'acard-' + key.replace(':', '-');
+    const card   = document.getElementById(cardId);
+    const cb     = card ? card.querySelector('input[type=checkbox]') : null;
+    if (allSelected) {
+      _selectedArtifacts.delete(key);
+      if (card) card.style.borderColor = '#1e293b';
+      if (cb) cb.checked = false;
+    } else {
+      _selectedArtifacts.add(key);
+      if (card) card.style.borderColor = '#6366f1';
+      if (cb) cb.checked = true;
+    }
+  });
+  _updateSelectionUI();
+}
+
+async function deleteSelectedArtifacts() {
+  const n = _selectedArtifacts.size;
+  if (!n) return;
+  if (!confirm(`Deletar ${n} artifact${n > 1 ? 's' : ''} selecionado${n > 1 ? 's' : ''}?`)) return;
+  await Promise.all([..._selectedArtifacts].map(key => {
+    const [type, id] = key.split(':');
+    return fetch(`/artifacts/${type}/${id}`, { method: 'DELETE' });
+  }));
+  _selectedArtifacts.clear();
+  loadArtifacts();
+}
 
 const ARTIFACT_ICONS = { pdf: '📄', chart: '📈', excel: '📊' };
 const ARTIFACT_LABELS = { pdf: 'PDF', chart: 'Gráfico', excel: 'Excel' };
@@ -1987,13 +2113,18 @@ function renderArtifact(a) {
   const dt = a.created_at ? new Date(a.created_at).toLocaleString('pt-BR') : '—';
   const name = a.filename || ARTIFACT_LABELS[a.type];
   const url = _artifactUrl(a);
+  const key = `${a.type}:${a.id}`;
+  const checked = _selectedArtifacts.has(key) ? 'checked' : '';
+  const borderColor = _selectedArtifacts.has(key) ? '#6366f1' : '#1e293b';
   const preview = a.type === 'chart'
     ? `<img src="${url}" style="width:100%;border-radius:6px;margin-top:8px;border:1px solid #1e293b;" loading="lazy"/>`
     : '';
   return `
-  <div style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:14px;">
+  <div id="acard-${key.replace(':','-')}" style="background:#141c27;border:1px solid ${borderColor};border-radius:10px;padding:14px;transition:border-color .15s;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
-      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <input type="checkbox" ${checked} onchange="toggleArtifactSelect('${key}', this)"
+          style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;cursor:pointer;">
         <span style="font-size:18px;">${ARTIFACT_ICONS[a.type]}</span>
         <div style="min-width:0;">
           <div style="font-size:12px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
@@ -2035,6 +2166,8 @@ function renderArtifactList() {
 async function loadArtifacts() {
   const list = document.getElementById('artifactsList');
   list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
+  _selectedArtifacts.clear();
+  _updateSelectionUI();
   try {
     const res = await fetch('/artifacts');
     _allArtifacts = await res.json();

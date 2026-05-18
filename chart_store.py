@@ -75,8 +75,25 @@ def save_pdf(session_id: str, pdf_bytes: bytes, filename: str) -> str:
             "INSERT INTO pdfs (pdf_id, session_id, pdf_blob, filename, created_at) VALUES (?, ?, ?, ?, ?)",
             (pdf_id, session_id, pdf_bytes, filename, _now()),
         )
+        _conn.execute("DELETE FROM charts WHERE session_id = ?", (session_id,))
         _conn.commit()
     return pdf_id
+
+
+def delete_chart(chart_id: str) -> None:
+    if _conn is None:
+        return
+    with _lock:
+        _conn.execute("DELETE FROM charts WHERE chart_id = ?", (chart_id,))
+        _conn.commit()
+
+
+def delete_charts_for_session(session_id: str) -> None:
+    if _conn is None:
+        return
+    with _lock:
+        _conn.execute("DELETE FROM charts WHERE session_id = ?", (session_id,))
+        _conn.commit()
 
 
 def get_pdf(pdf_id: str) -> tuple[bytes, str] | None:
@@ -135,12 +152,9 @@ def list_artifacts() -> list[dict]:
             "SELECT excel_id, session_id, filename, created_at FROM excels ORDER BY created_at DESC"
         ).fetchall()
 
-    sessions_with_pdf = {row[1] for row in pdfs}
-
     result = []
     for row in charts:
-        if row[1] not in sessions_with_pdf:
-            result.append({"type": "chart", "id": row[0], "session_id": row[1], "created_at": row[2]})
+        result.append({"type": "chart", "id": row[0], "session_id": row[1], "created_at": row[2]})
     for row in pdfs:
         result.append({"type": "pdf", "id": row[0], "session_id": row[1], "filename": row[2], "created_at": row[3]})
     for row in excels:

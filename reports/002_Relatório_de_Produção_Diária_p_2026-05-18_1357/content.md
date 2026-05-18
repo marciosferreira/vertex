@@ -1,0 +1,1 @@
+Não foi possível concluir a tarefa. A consulta aos dados de produção de cada modelo falhou devido a um erro de tempo limite na conexão com a API. Por favor, tente novamente mais tarde.

@@ -18,10 +18,10 @@ _WEEKDAY_PT = {
 
 
 def _next_id() -> str:
+    # MAX dentro da mesma transação que o INSERT — sem race condition
     with get_db() as conn:
-        rows = conn.execute("SELECT id FROM scheduled_tasks").fetchall()
-        used = [int(r['id']) for r in rows]
-        return str((max(used, default=0) + 1)).zfill(3)
+        row = conn.execute("SELECT COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS nxt FROM scheduled_tasks").fetchone()
+        return str(row["nxt"]).zfill(3)
 
 
 def _freq_label(task: dict) -> str:
@@ -171,6 +171,55 @@ def set_task_instructions(task_id: str, instructions: str) -> str:
 def list_scheduled_tasks() -> str:
     """Lista todas as tarefas agendadas com status, frequência e descrição."""
     return _format_list(_all_tasks())
+
+
+@tool
+def get_task_instructions(task_id: str) -> str:
+    """Retorna as instructions de execução de uma tarefa (passo a passo + código).
+
+    Use antes de editar uma tarefa para obter o contexto atual do que ela executa.
+
+    Args:
+        task_id: ID da tarefa (ex: "001").
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name, instructions FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if not row:
+        return f"Tarefa '{task_id}' não encontrada."
+    instructions = row['instructions'] or '(sem instructions definidas)'
+    return f"**Tarefa [{task_id}] — {row['name']}**\n\nInstruções atuais:\n{instructions}"
+
+
+@tool
+def toggle_pause_task(task_id: str) -> str:
+    """Pausa uma tarefa ativa ou retoma uma tarefa pausada.
+
+    Não afeta tasks em execução, concluídas ou com erro.
+
+    Args:
+        task_id: ID da tarefa (ex: "001"). Use list_scheduled_tasks para ver os IDs.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name, status FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            ids = [r['id'] for r in conn.execute("SELECT id FROM scheduled_tasks").fetchall()]
+            return f"Tarefa '{task_id}' não encontrada. IDs existentes: {ids}"
+        current = row["status"]
+        if current not in ("active", "paused"):
+            return f"Não é possível pausar/retomar tarefa com status '{current}'."
+        new_status = "paused" if current == "active" else "active"
+        conn.execute("UPDATE scheduled_tasks SET status=? WHERE id=?", (new_status, task_id))
+        conn.commit()
+
+    action = "pausada" if new_status == "paused" else "retomada"
+    return (
+        f"Tarefa **[{task_id}]** {action}.\n\n"
+        + _format_list(_all_tasks())
+    )
 
 
 @tool

@@ -329,14 +329,60 @@ def root():
 
 @app.get("/tasks")
 def get_tasks():
-    """Retorna as tarefas agendadas do banco como JSON."""
+    """Retorna as tarefas agendadas com as últimas 5 execuções de cada uma."""
     with get_db() as conn:
-        rows = conn.execute(
+        tasks = conn.execute(
             "SELECT id, name, description, frequency, time, weekday, day, "
-            "email, status, next_run, last_run, created_at "
+            "email, status, next_run, last_run, created_at, retry_count, max_retries "
             "FROM scheduled_tasks ORDER BY id"
         ).fetchall()
+        runs = conn.execute(
+            "SELECT id, task_id, started_at, ended_at, status, error "
+            "FROM task_runs ORDER BY started_at DESC"
+        ).fetchall()
+
+    runs_by_task: dict = {}
+    for r in runs:
+        d = dict(r)
+        runs_by_task.setdefault(d["task_id"], [])
+        if len(runs_by_task[d["task_id"]]) < 5:
+            runs_by_task[d["task_id"]].append(d)
+
+    result = []
+    for t in tasks:
+        row = dict(t)
+        row["runs"] = runs_by_task.get(row["id"], [])
+        result.append(row)
+    return result
+
+
+@app.get("/tasks/{task_id}/runs")
+def get_task_runs(task_id: str):
+    """Retorna o histórico completo de execuções de uma tarefa."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM task_runs WHERE task_id=? ORDER BY started_at DESC",
+            (task_id,),
+        ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.post("/tasks/{task_id}/toggle-pause")
+def toggle_pause_task(task_id: str):
+    """Alterna entre pausado e ativo. Não afeta tasks em execução ou concluídas."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
+        current = row["status"]
+        if current not in ("active", "paused"):
+            return JSONResponse(status_code=409, content={"error": True, "message": f"Não é possível pausar/retomar task com status '{current}'."})
+        new_status = "paused" if current == "active" else "active"
+        conn.execute("UPDATE scheduled_tasks SET status=? WHERE id=?", (new_status, task_id))
+        conn.commit()
+    return {"ok": True, "task_id": task_id, "status": new_status}
 
 
 @app.delete("/tasks/{task_id}")
@@ -529,6 +575,7 @@ def get_historical_compat(
     # chaves de FPY e OEE dependem do turno selecionado
     fpy_key = f"fpy_{shift.lower()}" if shift else None
     oee_key = f"oee_{shift.lower()}" if shift else None
+    _PT_DAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
     result = []
     for d in sorted(prod.keys()):
@@ -550,7 +597,7 @@ def get_historical_compat(
             oee = m.get(oee_key, 0) if oee_key else round((m.get("oee_a",0) + m.get("oee_b",0) + m.get("oee_c",0)) / 3, 1)
         result.append({
             "date":  d,
-            "label": m.get("label", ""),
+            "label": _PT_DAYS[date.fromisoformat(d).weekday()],
             "produced": prod[d]["produced"],
             "defects":  def_total.get(d, 0),
             "target":   prod[d]["target"],

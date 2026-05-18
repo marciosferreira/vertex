@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from db import get_db
@@ -20,9 +20,11 @@ import os
 REPORTS_DIR = Path(__file__).parent.parent / "reports"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-_PDF_TOKEN = re.compile(r'\[pdf:([a-f0-9\-]{36})\]')
-
 _CHECK_INTERVAL_SECONDS = 120
+_TASK_TIMEOUT_SECONDS   = 600          # 10 min — mata execuções travadas
+_RETRY_BACKOFF_MINUTES  = [5, 15, 60]  # espera entre tentativas (1ª, 2ª, 3ª)
+
+_PDF_TOKEN = re.compile(r'\[pdf:([a-f0-9\-]{36})\]')
 
 
 def _resolve_pdf_links(content: str) -> str:
@@ -73,13 +75,10 @@ def _build_prompt(task: dict, now: datetime) -> str:
     ts = now.strftime('%d/%m/%Y %H:%M')
     header = (
         f"[EXECUÇÃO AUTOMÁTICA — {ts}]\n"
-        "Você DEVE obrigatoriamente: (1) chamar consultar_analista para buscar os dados, "
-        "(2) chamar gerar_pdf com toda a análise e gráficos gerados. "
-        "NÃO responda com texto puro. Use as tools.\n\n"
+        "Execute a tarefa abaixo usando as tools disponíveis. "
+        "NÃO responda com texto puro — use as tools para gerar o artefato solicitado.\n\n"
     )
-    footer = (
-        "\n\nGere o PDF agora com gerar_pdf e retorne o token [pdf:uuid] na resposta."
-    )
+    footer = "\n\nExecute agora e retorne o token do artefato gerado na resposta."
 
     if task.get('instructions'):
         return (
@@ -92,27 +91,74 @@ def _build_prompt(task: dict, now: datetime) -> str:
     return header + task.get('description', '') + footer
 
 
+def _start_run(task_id: str, started_at: str) -> int:
+    """Insere uma linha em task_runs e retorna o run_id."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO task_runs (task_id, started_at, status) VALUES (?, ?, 'running')",
+            (task_id, started_at),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def _finish_run(run_id: int, status: str, output: str = None, error: str = None) -> None:
+    ended_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE task_runs SET ended_at=?, status=?, output=?, error=? WHERE id=?",
+            (ended_at, status, output, error, run_id),
+        )
+        conn.commit()
+
+
 def _execute_task(task: dict) -> None:
     from agent_multi import invoke_multi_agent
 
-    now = datetime.now()
-    task_id = task['id']
-    logger.info("[daemon] Executando task %s: %s", task_id, task.get('name'))
+    now      = datetime.now()
+    task_id  = task['id']
+    now_str  = now.strftime('%Y-%m-%d %H:%M:%S')
 
+    # ── 1. Marca como running (impede execução dupla) ────────────────────────
+    with get_db() as conn:
+        updated = conn.execute(
+            "UPDATE scheduled_tasks SET status='running' WHERE id=? AND status='active'",
+            (task_id,),
+        ).rowcount
+        conn.commit()
+
+    if updated == 0:
+        # Outra thread já pegou esta task (ou foi pausada/cancelada entre o
+        # SELECT e o UPDATE). Abandona silenciosamente.
+        logger.info("[daemon] Task %s ignorada (já em running ou inativa)", task_id)
+        return
+
+    run_id = _start_run(task_id, now_str)
+    logger.info("[daemon] Iniciando task %s '%s' (run #%d)", task_id, task.get('name'), run_id)
+
+    # ── 2. Executa com timeout ───────────────────────────────────────────────
     try:
+        import concurrent.futures
         session_id = f"daemon_{task_id}_{now.strftime('%Y%m%d%H%M')}"
-        prompt = _build_prompt(task, now)
-        result = invoke_multi_agent(prompt, session_id)
-        logger.info("[daemon] Resultado task %s (primeiros 300 chars): %s", task_id, result[:300])
+        prompt     = _build_prompt(task, now)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(invoke_multi_agent, prompt, session_id)
+            result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
+
+        logger.info("[daemon] Task %s concluída (run #%d)", task_id, run_id)
 
         folder = _save_report(task, result, now)
         logger.info("[daemon] Relatório salvo em %s", folder)
 
-        last_run = now.strftime('%Y-%m-%d %H:%M:%S')
+        _finish_run(run_id, 'success', output=result[:4000])
+
+        # ── 3a. Sucesso: agenda próxima execução ─────────────────────────────
+        last_run = now_str
         if task.get('frequency') == 'once':
             with get_db() as conn:
                 conn.execute(
-                    "UPDATE scheduled_tasks SET last_run = ?, status = 'completed' WHERE id = ?",
+                    "UPDATE scheduled_tasks SET last_run=?, status='completed', retry_count=0 WHERE id=?",
                     (last_run, task_id),
                 )
                 conn.commit()
@@ -125,17 +171,51 @@ def _execute_task(task: dict) -> None:
             )
             with get_db() as conn:
                 conn.execute(
-                    "UPDATE scheduled_tasks SET last_run = ?, next_run = ? WHERE id = ?",
+                    "UPDATE scheduled_tasks SET last_run=?, next_run=?, status='active', retry_count=0 WHERE id=?",
                     (last_run, next_run, task_id),
                 )
                 conn.commit()
 
-    except Exception:
-        logger.exception("[daemon] Falha ao executar task %s", task_id)
+    except concurrent.futures.TimeoutError:
+        logger.error("[daemon] Task %s excedeu timeout de %ds (run #%d)", task_id, _TASK_TIMEOUT_SECONDS, run_id)
+        _finish_run(run_id, 'error', error=f"Timeout após {_TASK_TIMEOUT_SECONDS}s")
+        _handle_retry(task, now_str, "Timeout na execução")
+
+    except Exception as exc:
+        logger.exception("[daemon] Falha na task %s (run #%d)", task_id, run_id)
+        _finish_run(run_id, 'error', error=str(exc))
+        _handle_retry(task, now_str, str(exc))
+
+
+def _handle_retry(task: dict, last_run: str, error_msg: str) -> None:
+    """Incrementa retry_count. Se ainda há tentativas, agenda reexecução com backoff.
+    Caso contrário, marca a task como 'error' para revisão manual."""
+    task_id     = task['id']
+    retry_count = task.get('retry_count', 0) + 1
+    max_retries = task.get('max_retries', 3)
+
+    if retry_count <= max_retries:
+        backoff_min = _RETRY_BACKOFF_MINUTES[min(retry_count - 1, len(_RETRY_BACKOFF_MINUTES) - 1)]
+        next_run    = (datetime.now() + timedelta(minutes=backoff_min)).strftime('%Y-%m-%d %H:%M:%S')
+        logger.warning(
+            "[daemon] Task %s tentativa %d/%d — reagendada para %s (backoff %dmin)",
+            task_id, retry_count, max_retries, next_run, backoff_min,
+        )
         with get_db() as conn:
             conn.execute(
-                "UPDATE scheduled_tasks SET status = 'error' WHERE id = ?",
-                (task_id,),
+                "UPDATE scheduled_tasks SET status='active', retry_count=?, next_run=?, last_run=? WHERE id=?",
+                (retry_count, next_run, last_run, task_id),
+            )
+            conn.commit()
+    else:
+        logger.error(
+            "[daemon] Task %s esgotou %d tentativas. Status: error. Erro: %s",
+            task_id, max_retries, error_msg,
+        )
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE scheduled_tasks SET status='error', retry_count=?, last_run=? WHERE id=?",
+                (retry_count, last_run, task_id),
             )
             conn.commit()
 
@@ -143,6 +223,7 @@ def _execute_task(task: dict) -> None:
 def check_due_tasks() -> None:
     with get_db() as conn:
         rows = conn.execute(
+            # 'running' é excluído — evita execução dupla em tasks lentas
             "SELECT * FROM scheduled_tasks WHERE status = 'active'"
         ).fetchall()
 
