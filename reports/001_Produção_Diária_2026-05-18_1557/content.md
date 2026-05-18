@@ -1,0 +1,1 @@
+Não foi possível executar a tarefa devido a um erro de tempo limite na conexão com a API. Por favor, tente novamente mais tarde ou verifique a disponibilidade da API.

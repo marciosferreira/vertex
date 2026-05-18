@@ -12,6 +12,7 @@ from pathlib import Path
 
 from db import get_db
 from .md_parser import calculate_next_run
+from .runner import run_task_code, TaskCodeError
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,37 @@ def _save_report(task: dict, content: str, now: datetime) -> Path:
         encoding='utf-8',
     )
     return folder
+
+
+def _date_range_for_task(task: dict) -> tuple[str, str]:
+    """Calcula from_date/to_date com base na frequência da tarefa.
+
+    Garante que o task_code sempre receba o período correto para cada
+    frequência, sem depender de datas hardcoded no código da tarefa.
+    """
+    import re
+    today = datetime.now().date()
+    freq  = task.get('frequency', 'daily')
+
+    if freq == 'daily':
+        delta = 1
+    elif freq == 'weekly':
+        delta = 7
+    elif freq == 'monthly':
+        delta = 30
+    elif freq == 'once':
+        delta = 7
+    else:
+        m = re.match(r'every_(\d+)d', freq)
+        if m:
+            delta = int(m.group(1))
+        else:
+            m = re.match(r'every_(\d+)h', freq)
+            delta = 1 if m else 7
+
+    from_date = (today - timedelta(days=delta)).isoformat()
+    to_date   = today.isoformat()
+    return from_date, to_date
 
 
 def _build_prompt(task: dict, now: datetime) -> str:
@@ -140,11 +172,26 @@ def _execute_task(task: dict) -> None:
     try:
         import concurrent.futures
         session_id = f"daemon_{task_id}_{now.strftime('%Y%m%d%H%M')}"
-        prompt     = _build_prompt(task, now)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(invoke_multi_agent, prompt, session_id)
-            result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
+        if task.get("task_code"):
+            # ── Modo determinístico: executa o código Python diretamente ─────
+            from_date, to_date = _date_range_for_task(task)
+
+            def _run_code():
+                tokens = run_task_code(task["task_code"], from_date, to_date, session_id)
+                return " ".join(tokens)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(_run_code)
+                result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
+        else:
+            # ── Modo LLM: fallback para agente quando não há task_code ────────
+            from agent_multi import invoke_multi_agent
+            prompt = _build_prompt(task, now)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(invoke_multi_agent, prompt, session_id)
+                result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
 
         logger.info("[daemon] Task %s concluída (run #%d)", task_id, run_id)
 
@@ -177,9 +224,15 @@ def _execute_task(task: dict) -> None:
                 conn.commit()
 
     except concurrent.futures.TimeoutError:
+        msg = f"Timeout após {_TASK_TIMEOUT_SECONDS}s"
         logger.error("[daemon] Task %s excedeu timeout de %ds (run #%d)", task_id, _TASK_TIMEOUT_SECONDS, run_id)
-        _finish_run(run_id, 'error', error=f"Timeout após {_TASK_TIMEOUT_SECONDS}s")
-        _handle_retry(task, now_str, "Timeout na execução")
+        _finish_run(run_id, 'error', error=msg)
+        _handle_retry(task, now_str, msg)
+
+    except TaskCodeError as exc:
+        logger.error("[daemon] Erro no task_code da task %s (run #%d): %s", task_id, run_id, exc)
+        _finish_run(run_id, 'error', error=str(exc))
+        _handle_retry(task, now_str, str(exc))
 
     except Exception as exc:
         logger.exception("[daemon] Falha na task %s (run #%d)", task_id, run_id)

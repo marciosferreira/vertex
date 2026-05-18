@@ -1,0 +1,145 @@
+"""
+TaskContext — objeto injetado no namespace de execução das tasks de código.
+Fornece acesso seguro à API local e helpers para salvar e gerar artifacts,
+reutilizando as mesmas funções internas do agente.
+"""
+
+import io
+from datetime import date, timedelta
+
+
+class TaskContext:
+    def __init__(self, session_id: str, backend_url: str = "http://localhost:8000"):
+        self.session_id = session_id
+        self._backend_url = backend_url.rstrip("/")
+        self._tokens: list[str] = []
+
+    # ── API local ─────────────────────────────────────────────────────────────
+
+    def api(self, path: str) -> any:
+        """GET na API local. path deve começar com '/'.
+        Retorna o JSON deserializado (dict ou list)."""
+        import requests
+        url = self._backend_url + path
+        res = requests.get(url, timeout=30)
+        res.raise_for_status()
+        return res.json()
+
+    def today(self) -> str:
+        """Retorna a data de hoje no formato YYYY-MM-DD. Use para tarefas de 'hoje'."""
+        return date.today().isoformat()
+
+    def date_range(self, days: int = 7) -> tuple[str, str]:
+        """Retorna (from_date, to_date) para os últimos N dias, formato YYYY-MM-DD."""
+        end   = date.today()
+        start = end - timedelta(days=days - 1)
+        return start.isoformat(), end.isoformat()
+
+    # ── Gerar artifacts (reutilizam funções existentes do agente) ─────────────
+
+    def generate_pdf(self, titulo: str, conteudo: str) -> str:
+        """Gera PDF a partir de conteúdo markdown com tokens [chart:uuid].
+
+        Usa a mesma engine (fpdf2) e estilos que o agente usa — suporta
+        títulos, tabelas markdown, bullet points e tokens [chart:uuid] embutidos.
+
+        Args:
+            titulo: Título do relatório (ex: 'Relatório de Produção — Maio 2026').
+            conteudo: Conteúdo em markdown. Tokens [chart:uuid] são substituídos
+                      pelas imagens correspondentes.
+
+        Returns:
+            Token '[pdf:uuid]' para incluir na resposta.
+        """
+        from agent_multi import _build_pdf
+        pdf_id = _build_pdf(titulo, conteudo, self.session_id)
+        token = f"[pdf:{pdf_id}]"
+        self._tokens.append(token)
+        return token
+
+    def generate_excel(self, df_or_sheets, nome_arquivo: str = "relatorio") -> str:
+        """Gera Excel (.xlsx) com formatação padrão (cabeçalho destacado, auto-width).
+
+        Usa a mesma formatação que o agente usa internamente.
+
+        Args:
+            df_or_sheets: Um DataFrame para aba única, ou dict {'Nome da Aba': df}
+                          para múltiplas abas.
+            nome_arquivo: Nome do arquivo sem extensão (ex: 'producao_semanal').
+
+        Returns:
+            Token '[excel:uuid]' para incluir na resposta.
+        """
+        import re
+        import pandas as pd
+        import chart_store
+        from agent_multi import _fmt_excel_sheet
+
+        output = io.BytesIO()
+
+        if isinstance(df_or_sheets, dict):
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                for aba, df in df_or_sheets.items():
+                    df.to_excel(writer, sheet_name=aba[:31], index=False)
+                    _fmt_excel_sheet(writer.sheets[aba[:31]], df)
+        else:
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df_or_sheets.to_excel(writer, sheet_name="Dados", index=False)
+                _fmt_excel_sheet(writer.sheets["Dados"], df_or_sheets)
+
+        safe_name = re.sub(r'[^\w\- ]', '', nome_arquivo)[:40].strip().replace(" ", "_")
+        filename = f"{safe_name or 'relatorio'}.xlsx"
+        excel_id = chart_store.save_excel(self.session_id, output.getvalue(), filename)
+        token = f"[excel:{excel_id}]"
+        self._tokens.append(token)
+        return token
+
+    # ── Salvar artifacts raw (controle total) ─────────────────────────────────
+
+    def save_chart(self, fig, dpi: int = 150) -> str:
+        """Salva figura matplotlib como PNG. Retorna token '[chart:uuid]'."""
+        import chart_store
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+        buf.seek(0)
+        chart_id = chart_store.save_chart(self.session_id, buf.read())
+        token = f"[chart:{chart_id}]"
+        self._tokens.append(token)
+        import matplotlib.pyplot as plt
+        plt.close(fig)
+        return token
+
+    def save_excel(self, wb, filename: str = "relatorio.xlsx") -> str:
+        """Salva workbook openpyxl como XLSX com controle total. Retorna token '[excel:uuid]'.
+
+        Use quando precisar de formatação personalizada além do padrão.
+        Para uso simples com DataFrame, prefira generate_excel().
+        """
+        import chart_store
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        excel_id = chart_store.save_excel(self.session_id, buf.read(), filename)
+        token = f"[excel:{excel_id}]"
+        self._tokens.append(token)
+        return token
+
+    def save_pdf(self, html: str, filename: str = "relatorio.pdf") -> str:
+        """Gera PDF a partir de HTML completo (WeasyPrint). Retorna token '[pdf:uuid]'.
+
+        Use quando precisar de layout HTML/CSS personalizado.
+        Para uso simples com markdown, prefira generate_pdf().
+        """
+        import chart_store
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html).write_pdf()
+        pdf_id = chart_store.save_pdf(self.session_id, pdf_bytes, filename)
+        token = f"[pdf:{pdf_id}]"
+        self._tokens.append(token)
+        return token
+
+    # ── Resultado ─────────────────────────────────────────────────────────────
+
+    def tokens(self) -> list[str]:
+        return list(self._tokens)

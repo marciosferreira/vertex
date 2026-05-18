@@ -217,6 +217,7 @@ def init_db():
                 name         TEXT NOT NULL,
                 description  TEXT NOT NULL,
                 instructions TEXT,
+                task_code    TEXT,
                 frequency    TEXT NOT NULL,
                 time         TEXT,
                 weekday      TEXT,
@@ -230,6 +231,16 @@ def init_db():
                 max_retries  INTEGER NOT NULL DEFAULT 3
             );
 
+            -- Histórico de versões de código das tarefas
+            CREATE TABLE IF NOT EXISTS task_code_versions (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id     TEXT    NOT NULL,
+                version     INTEGER NOT NULL,
+                code        TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_tcv_task_id ON task_code_versions(task_id);
+
             -- Histórico de execuções de cada tarefa
             CREATE TABLE IF NOT EXISTS task_runs (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,8 +253,24 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_task_runs_task_id ON task_runs(task_id);
             CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
+
+            -- Sequência monotônica de IDs de tarefas — nunca regride, evita reutilização
+            CREATE TABLE IF NOT EXISTS task_id_sequence (
+                id      INTEGER PRIMARY KEY CHECK (id = 1),
+                next_id INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT OR IGNORE INTO task_id_sequence (id, next_id) VALUES (1, 1);
         """)
         _seed(conn)
+        # Sincroniza a sequência com o MAX real do banco (idempotente)
+        conn.execute("""
+            UPDATE task_id_sequence
+            SET next_id = MAX(next_id, (
+                SELECT COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1
+                FROM scheduled_tasks
+            ))
+            WHERE id = 1
+        """)
         conn.commit()
 
 

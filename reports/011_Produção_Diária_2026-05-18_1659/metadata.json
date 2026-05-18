@@ -1,0 +1,14 @@
+{
+  "task_id": "011",
+  "task_name": "Produção Diária",
+  "run_at": "2026-05-18T16:59:18.890121",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_2m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

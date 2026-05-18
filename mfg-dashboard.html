@@ -493,7 +493,7 @@
 
   <!-- Footer -->
   <div style="padding:16px 24px;border-top:1px solid #1e293b;flex-shrink:0;">
-    <button onclick="closeAgenda();document.getElementById('chatInput')?.focus()" style="width:100%;padding:10px;background:#312e81;border:1px solid #4338ca;border-radius:8px;color:#e0e7ff;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
+    <button onclick="closeAgenda();openChat();" style="width:100%;padding:10px;background:#312e81;border:1px solid #4338ca;border-radius:8px;color:#e0e7ff;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em;">
       + Nova tarefa via chat
     </button>
   </div>
@@ -501,6 +501,19 @@
 
 <!-- ── Slide-over: Artifacts ────────────────────────────────────────────── -->
 <div id="artifactsOverlay" onclick="closeArtifacts()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
+
+<!-- Modal de erro de execução -->
+<div id="runErrorOverlay" onclick="closeRunError()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;backdrop-filter:blur(3px);"></div>
+<div id="runErrorModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2001;background:#0f1520;border:1px solid #3f1a1a;border-radius:12px;width:min(680px,92vw);max-height:80vh;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.6);">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b;">
+    <span style="font-size:12px;font-weight:600;color:#f87171;font-family:'JetBrains Mono',monospace;letter-spacing:.05em;">ERRO DE EXECUÇÃO</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="copyRunError()" id="runErrorCopyBtn" style="font-size:11px;padding:4px 10px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;">Copiar</button>
+      <button onclick="closeRunError()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+  <pre id="runErrorText" style="flex:1;overflow:auto;margin:0;padding:18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#fca5a5;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:#080d15;border-radius:0 0 12px 12px;"></pre>
+</div>
 <aside id="artifactsPanel" style="display:none;position:fixed;top:0;right:0;height:100vh;width:480px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
   <!-- Header -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
@@ -1349,6 +1362,78 @@ function _toggleThinkingHistory(wrapId) {
   document.getElementById(wrapId)?.classList.toggle('open');
 }
 
+// ── Modal de erro de execução ─────────────────────────
+
+function showRunError(text) {
+  document.getElementById('runErrorText').textContent = text;
+  document.getElementById('runErrorCopyBtn').textContent = 'Copiar';
+  document.getElementById('runErrorOverlay').style.display = 'block';
+  document.getElementById('runErrorModal').style.cssText += ';display:flex;';
+}
+
+function closeRunError() {
+  document.getElementById('runErrorOverlay').style.display = 'none';
+  document.getElementById('runErrorModal').style.display   = 'none';
+}
+
+async function copyRunError() {
+  const text = document.getElementById('runErrorText').textContent;
+  await navigator.clipboard.writeText(text);
+  const btn = document.getElementById('runErrorCopyBtn');
+  btn.textContent = 'Copiado ✓';
+  setTimeout(() => btn.textContent = 'Copiar', 2000);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeRunError();
+});
+
+// ── Renderização de artefatos direto no chat ──────────
+
+let _lastArtifactMsgId = null;
+
+function _addArtifactToChat(token, taskId, saved) {
+  const match = token.match(/^\[(chart|pdf|excel):([a-f0-9\-]{36})\]$/);
+  if (!match) return;
+  const [, type, id] = match;
+  const icons = { chart: '📈', pdf: '📄', excel: '📊' };
+  const labels = { chart: 'Gráfico', pdf: 'PDF', excel: 'Excel' };
+  const urls   = { chart: `/chart/${id}`, pdf: `/pdf/${id}`, excel: `/excel/${id}` };
+
+  const badge = saved
+    ? `<span style="background:#14532d;color:#4ade80;font-size:9px;padding:2px 8px;border-radius:99px;border:1px solid #16a34a44;">✔ Salvo</span>`
+    : `<span style="background:#1e3a5f;color:#93c5fd;font-size:9px;padding:2px 8px;border-radius:99px;border:1px solid #1d4ed844;">Preview</span>`;
+
+  const preview = type === 'chart'
+    ? `<img src="${urls[type]}" style="width:100%;border-radius:6px;margin-top:8px;border:1px solid #1e293b;"/>`
+    : `<a href="${urls[type]}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:7px 14px;background:#1e293b;border-radius:6px;color:#e2e8f0;font-size:13px;text-decoration:none;">
+        ${icons[type]} Abrir ${labels[type]}
+       </a>`;
+
+  const html = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:12px;color:#94a3b8;">${icons[type]} ${labels[type]}</span>
+      ${badge}
+      ${taskId ? `<span style="background:#1a1f2e;color:#64748b;font-size:9px;padding:2px 8px;border-radius:99px;border:1px solid #1e293b;">Tarefa ${taskId}</span>` : ''}
+    </div>
+    ${preview}`;
+
+  _lastArtifactMsgId = _addMsg('assistant', html);
+}
+
+function _markLastArtifactSaved() {
+  if (!_lastArtifactMsgId) return;
+  const el = document.getElementById(_lastArtifactMsgId);
+  if (!el) return;
+  const badge = el.querySelector('span[style*="Preview"]');
+  if (badge) {
+    badge.style.background = '#14532d';
+    badge.style.color = '#4ade80';
+    badge.style.border = '1px solid #16a34a44';
+    badge.textContent = '✔ Salvo';
+  }
+}
+
 // ── sendChat com EventSource ──────────────────────────
 
 function sendChat() {
@@ -1379,6 +1464,11 @@ function sendChat() {
       hasEvents = true; stepN++;
       _addThinkingStep(ids, ev.label, stepN, true);
       _updateThinkingLive(ids, ev.label, true);
+    } else if (ev.type === 'artifact_preview') {
+      hasEvents = true;
+      _addArtifactToChat(ev.token, ev.task_id, false);
+    } else if (ev.type === 'artifact_saved') {
+      _markLastArtifactSaved();
     } else if (ev.type === 'reply') {
       es.close();
       _finalizeThinking(ids, hasEvents);
@@ -1905,8 +1995,8 @@ function _runsSection(runs) {
   const rows = runs.map(r => {
     const dur  = _runDuration(r);
     const time = r.started_at ? r.started_at.slice(0,16).replace('T',' ') : '—';
-    const errFull = (r.error || '').replace(/"/g, '&quot;');
-    const err  = r.error ? `<div title="${errFull}" style="font-size:10px;color:#f87171;margin-top:2px;word-break:break-all;cursor:help;">${r.error.slice(0,120)}${r.error.length>120?'…':''}</div>` : '';
+    const errFull = (r.error || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const err  = r.error ? `<div onclick="showRunError(this.dataset.err)" data-err="${errFull}" style="font-size:10px;color:#f87171;margin-top:2px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">⚠ ver erro ↗</div>` : '';
     return `
     <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid #0f172a;">
       ${_runStatusDot(r.status)}
@@ -2155,7 +2245,8 @@ function setArtifactFilter(f) {
 
 function renderArtifactList() {
   const list = document.getElementById('artifactsList');
-  const filtered = _artifactFilter === 'all' ? _allArtifacts : _allArtifacts.filter(a => a.origin === _artifactFilter);
+  const visible  = _allArtifacts.filter(a => !a.session_id?.startsWith('test_'));
+  const filtered = _artifactFilter === 'all' ? visible : visible.filter(a => a.origin === _artifactFilter);
   if (!filtered.length) {
     list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum artifact encontrado.</div>';
     return;

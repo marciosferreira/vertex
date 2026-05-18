@@ -18,10 +18,13 @@ _WEEKDAY_PT = {
 
 
 def _next_id() -> str:
-    # MAX dentro da mesma transação que o INSERT — sem race condition
+    # Sequência monotônica — nunca regride, mesmo após deleção de tasks.
     with get_db() as conn:
-        row = conn.execute("SELECT COALESCE(MAX(CAST(id AS INTEGER)), 0) + 1 AS nxt FROM scheduled_tasks").fetchone()
-        return str(row["nxt"]).zfill(3)
+        row = conn.execute(
+            "UPDATE task_id_sequence SET next_id = next_id + 1 WHERE id = 1 RETURNING next_id - 1 AS cur"
+        ).fetchone()
+        conn.commit()
+        return str(row["cur"]).zfill(3)
 
 
 def _freq_label(task: dict) -> str:
@@ -70,6 +73,17 @@ def _format_list(tasks: list[dict]) -> str:
         lines.append(f"  Descrição  : {t.get('description', '')}")
         lines.append("")
     return '\n'.join(lines)
+
+
+def _push_artifacts(event_type: str, tokens: list[str], task_id: str) -> None:
+    """Empurra artefatos diretamente para o stream SSE do chat."""
+    try:
+        from agent_multi import _push_event, _current_session
+        session = _current_session.get()
+        for token in tokens:
+            _push_event(session, {"type": event_type, "token": token, "task_id": task_id})
+    except Exception:
+        pass  # silencioso — não quebra a tool se o stream não estiver ativo
 
 
 def _row_to_dict(row) -> dict:
@@ -238,6 +252,8 @@ def delete_scheduled_task(task_id: str) -> str:
             return f"Tarefa '{task_id}' não encontrada. IDs existentes: {ids}"
         name = row['name']
         conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+        conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
+        conn.execute("DELETE FROM task_code_versions WHERE task_id = ?", (task_id,))
         conn.commit()
 
     tasks = _all_tasks()
@@ -321,4 +337,185 @@ def update_scheduled_task(
     return (
         f"Tarefa **[{task_id}]** atualizada. Campos: {', '.join(updates)}\n\n"
         + _format_list(tasks)
+    )
+
+
+@tool
+def get_task_code(task_id: str) -> str:
+    """Retorna o task_code Python armazenado de uma tarefa.
+
+    Use este tool antes de editar o código para obter a versão atual.
+
+    Args:
+        task_id: ID da tarefa (ex: "001").
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name, task_code FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if not row:
+        return f"Tarefa '{task_id}' não encontrada."
+    if not row['task_code']:
+        return f"Tarefa [{task_id}] não possui task_code. Usa instruções LLM."
+    return f"**Tarefa [{task_id}] — {row['name']}**\n\nCódigo atual:\n```python\n{row['task_code']}\n```"
+
+
+@tool
+def test_task_code(task_id: str, code: str, from_date: str = "", to_date: str = "") -> str:
+    """Compila e executa um trecho de task_code para validação antes de salvar.
+
+    O código deve definir `def run(from_date, to_date, ctx)` e retornar token(s).
+    Executa em sandbox com builtins restritos + matplotlib/numpy/pandas/openpyxl.
+
+    Args:
+        task_id: ID da tarefa (usado apenas para nomear a sessão de teste).
+        code: Código Python completo a testar.
+        from_date: Data inicial no formato YYYY-MM-DD (padrão: 7 dias atrás).
+        to_date: Data final no formato YYYY-MM-DD (padrão: hoje).
+    """
+    from .runner import run_task_code, default_test_range, TaskCodeError
+    from datetime import datetime
+
+    if not from_date or not to_date:
+        from_date, to_date = default_test_range()
+
+    session_id = f"test_{task_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    try:
+        tokens = run_task_code(code, from_date, to_date, session_id)
+        # Empurra preview direto para o chat — não depende do LLM repassar os tokens
+        _push_artifacts("artifact_preview", tokens, task_id)
+        return (
+            f"✅ **Teste bem-sucedido!** Período: {from_date} → {to_date}\n"
+            f"Artefatos enviados para o chat: {', '.join(tokens)}"
+        )
+    except TaskCodeError as e:
+        return f"❌ **Erro no código:**\n```\n{e}\n```\nCorreja e teste novamente antes de salvar."
+    except Exception as e:
+        return f"❌ **Erro inesperado:**\n```\n{e}\n```"
+
+
+@tool
+def save_task_code(task_id: str, code: str) -> str:
+    """Salva task_code Python em uma tarefa, criando versão histórica para rollback.
+
+    Após salvar, a tarefa executa o código diretamente (modo determinístico),
+    sem passar pelo LLM. Use test_task_code antes de salvar.
+
+    Args:
+        task_id: ID da tarefa (ex: "001").
+        code: Código Python completo com `def run(from_date, to_date, ctx)`.
+    """
+    from datetime import datetime
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name, task_code FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return f"Tarefa '{task_id}' não encontrada."
+
+        # Arquiva versão anterior se existir
+        if row['task_code']:
+            ver_row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 AS nxt FROM task_code_versions WHERE task_id = ?",
+                (task_id,)
+            ).fetchone()
+            version = ver_row['nxt']
+            conn.execute(
+                "INSERT INTO task_code_versions (task_id, version, code, saved_at) VALUES (?, ?, ?, ?)",
+                (task_id, version, row['task_code'], now),
+            )
+
+        conn.execute(
+            "UPDATE scheduled_tasks SET task_code = ? WHERE id = ?",
+            (code, task_id),
+        )
+        conn.commit()
+
+    # Promove artifacts do teste para a sessão real (aparecem no painel de artifacts)
+    try:
+        from agent_multi import _current_session
+        import chart_store
+        chart_store.promote_test_artifacts(task_id, _current_session.get())
+    except Exception:
+        pass
+
+    # Notifica o chat que o código foi persistido
+    _push_artifacts("artifact_saved", [], task_id)
+    return (
+        f"✅ **task_code salvo** na tarefa **[{task_id}]** ({row['name']}).\n"
+        "A próxima execução usará este código diretamente (modo determinístico).\n"
+        "Use `get_task_code_versions` para ver o histórico ou `restore_task_code_version` para reverter."
+    )
+
+
+@tool
+def get_task_code_versions(task_id: str) -> str:
+    """Lista as versões históricas do task_code de uma tarefa (para rollback).
+
+    Args:
+        task_id: ID da tarefa (ex: "001").
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT version, saved_at FROM task_code_versions WHERE task_id = ? ORDER BY version DESC",
+            (task_id,)
+        ).fetchall()
+    if not rows:
+        return f"Tarefa [{task_id}] não possui versões arquivadas."
+    lines = [f"**Versões do task_code — Tarefa [{task_id}]:**\n"]
+    for r in rows:
+        lines.append(f"  v{r['version']} — salva em {r['saved_at']}")
+    lines.append("\nUse `restore_task_code_version` para restaurar uma versão.")
+    return '\n'.join(lines)
+
+
+@tool
+def restore_task_code_version(task_id: str, version: int) -> str:
+    """Restaura uma versão anterior do task_code de uma tarefa.
+
+    O código atual é arquivado como nova versão antes de restaurar.
+
+    Args:
+        task_id: ID da tarefa (ex: "001").
+        version: Número da versão a restaurar (use get_task_code_versions para listar).
+    """
+    from datetime import datetime
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with get_db() as conn:
+        ver_row = conn.execute(
+            "SELECT code FROM task_code_versions WHERE task_id = ? AND version = ?",
+            (task_id, version)
+        ).fetchone()
+        if not ver_row:
+            return f"Versão {version} não encontrada para a tarefa [{task_id}]."
+
+        task_row = conn.execute(
+            "SELECT name, task_code FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not task_row:
+            return f"Tarefa '{task_id}' não encontrada."
+
+        # Arquiva versão atual antes de restaurar
+        if task_row['task_code']:
+            new_ver = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 AS nxt FROM task_code_versions WHERE task_id = ?",
+                (task_id,)
+            ).fetchone()['nxt']
+            conn.execute(
+                "INSERT INTO task_code_versions (task_id, version, code, saved_at) VALUES (?, ?, ?, ?)",
+                (task_id, new_ver, task_row['task_code'], now),
+            )
+
+        conn.execute(
+            "UPDATE scheduled_tasks SET task_code = ? WHERE id = ?",
+            (ver_row['code'], task_id),
+        )
+        conn.commit()
+
+    return (
+        f"✅ **Versão {version} restaurada** na tarefa **[{task_id}]** ({task_row['name']}).\n"
+        "O código anterior foi arquivado como nova versão."
     )

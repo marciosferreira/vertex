@@ -164,6 +164,24 @@ def list_artifacts() -> list[dict]:
     return result
 
 
+def promote_test_artifacts(task_id: str, real_session_id: str) -> None:
+    """Move artifacts de sessão test_{task_id}_* para a sessão real do chat.
+
+    Chamado após save_task_code para que o preview do teste apareça no
+    painel de artifacts com a sessão correta (não filtrada).
+    """
+    if _conn is None:
+        return
+    prefix = f"test_{task_id}_%"
+    with _lock:
+        for table in ("charts", "pdfs", "excels"):
+            _conn.execute(
+                f"UPDATE {table} SET session_id = ? WHERE session_id LIKE ?",
+                (real_session_id, prefix),
+            )
+        _conn.commit()
+
+
 def delete_artifact(artifact_type: str, artifact_id: str) -> bool:
     if _conn is None:
         return False
