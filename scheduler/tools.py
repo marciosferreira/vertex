@@ -28,8 +28,9 @@ def _freq_label(task: dict) -> str:
     import re
     freq = task.get('frequency', '')
     time_str = task.get('time', '')
-    if re.match(r'every_(\d+)m', freq):
-        return f"a cada {re.match(r'every_(\d+)m', freq).group(1)} min"
+    m = re.match(r'every_(\d+)m', freq)
+    if m:
+        return f"a cada {m.group(1)} min"
     if freq == 'once':
         return f"única vez em {task.get('next_run', '?')}"
     if freq == 'daily':
