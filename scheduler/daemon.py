@@ -103,25 +103,6 @@ def _date_range_for_task(task: dict) -> tuple[str, str]:
     return from_date, to_date
 
 
-def _build_prompt(task: dict, now: datetime) -> str:
-    ts = now.strftime('%d/%m/%Y %H:%M')
-    header = (
-        f"[EXECUÇÃO AUTOMÁTICA — {ts}]\n"
-        "Execute a tarefa abaixo usando as tools disponíveis. "
-        "NÃO responda com texto puro — use as tools para gerar o artefato solicitado.\n\n"
-    )
-    footer = "\n\nExecute agora e retorne o token do artefato gerado na resposta."
-
-    if task.get('instructions'):
-        return (
-            header
-            + "Siga exatamente as instruções abaixo, adaptando apenas datas para o período atual:\n\n"
-            + task['instructions']
-            + footer
-        )
-
-    return header + task.get('description', '') + footer
-
 
 def _start_run(task_id: str, started_at: str) -> int:
     """Insere uma linha em task_runs e retorna o run_id."""
@@ -145,8 +126,6 @@ def _finish_run(run_id: int, status: str, output: str = None, error: str = None)
 
 
 def _execute_task(task: dict) -> None:
-    from agent_multi import invoke_multi_agent
-
     now      = datetime.now()
     task_id  = task['id']
     now_str  = now.strftime('%Y-%m-%d %H:%M:%S')
@@ -173,25 +152,22 @@ def _execute_task(task: dict) -> None:
         import concurrent.futures
         session_id = f"daemon_{task_id}_{now.strftime('%Y%m%d%H%M')}"
 
-        if task.get("task_code"):
-            # ── Modo determinístico: executa o código Python diretamente ─────
-            from_date, to_date = _date_range_for_task(task)
+        if not task.get("task_code"):
+            msg = "Tarefa sem task_code — salve o código via chat antes de ativar."
+            logger.warning("[daemon] Task %s ignorada: %s", task_id, msg)
+            _finish_run(run_id, 'error', error=msg)
+            _handle_retry(task, now_str, msg)
+            return
 
-            def _run_code():
-                tokens = run_task_code(task["task_code"], from_date, to_date, session_id)
-                return " ".join(tokens)
+        from_date, to_date = _date_range_for_task(task)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(_run_code)
-                result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
-        else:
-            # ── Modo LLM: fallback para agente quando não há task_code ────────
-            from agent_multi import invoke_multi_agent
-            prompt = _build_prompt(task, now)
+        def _run_code():
+            tokens = run_task_code(task["task_code"], from_date, to_date, session_id)
+            return " ".join(tokens)
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(invoke_multi_agent, prompt, session_id)
-                result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_run_code)
+            result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
 
         logger.info("[daemon] Task %s concluída (run #%d)", task_id, run_id)
 

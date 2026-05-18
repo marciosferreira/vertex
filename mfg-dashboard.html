@@ -16,9 +16,9 @@
         startOnLoad: true,
         theme: 'dark',
         securityLevel: 'loose',
-        flowchart: { nodeSpacing: 50, rankSpacing: 80, curve: 'basis' },
+        flowchart: { nodeSpacing: 30, rankSpacing: 50, curve: 'basis' },
         themeVariables: {
-            fontSize: '18px',
+            fontSize: '13px',
             fontFamily: 'Inter, sans-serif',
             background: '#0B0F19',
             mainBkg: '#1E293B',
@@ -405,7 +405,7 @@
   .msg-bubble img { cursor:zoom-in !important; }
   /* ── Arquitetura section ── */
   .arq-section { font-family: 'Inter', sans-serif; background-color:#0B0F19; color:#e2e8f0; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0); background-size: 24px 24px; }
-  .arq-inner { max-width: 1280px; margin: 0 auto; padding: 40px 32px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .arq-inner { max-width: 100%; padding: 40px 48px 64px; display: flex; flex-direction: column; gap: 48px; }
   .arq-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
   .arq-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .arq-grid-6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
@@ -414,11 +414,12 @@
   .arq-card { border: 1px solid #1e293b; border-radius: 12px; background: #0f1520; padding: 24px; position: relative; overflow: hidden; }
   .arq-card-dark { border: 1px solid #0f172a; border-radius: 12px; background: #0B0F19; padding: 16px; }
   .mermaid-wrap { overflow-x: auto; }
-  .mermaid svg { height: auto !important; min-width: 900px; background: transparent !important; }
+  .mermaid-wrap { overflow-x: auto; display: flex; justify-content: center; }
+  .mermaid svg { height: auto !important; min-width: 700px; background: transparent !important; }
   .mermaid svg > rect:first-child { fill: transparent !important; }
-  .mermaid svg text { text-transform: none !important; font-size: 16px !important; }
+  .mermaid svg text { text-transform: none !important; font-size: 13px !important; }
   .mermaid svg .label foreignObject { overflow: visible; }
-  .mermaid svg .label div { font-size: 16px !important; line-height: 1.4; white-space: nowrap; }
+  .mermaid svg .label div { font-size: 13px !important; line-height: 1.4; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -1606,7 +1607,7 @@ initDashboard();
 <div class="arq-section">
 
     <!-- Divisória visual -->
-    <div style="display:flex;align-items:center;gap:16px;padding:48px 32px 0;max-width:1280px;margin:0 auto;">
+    <div style="display:flex;align-items:center;gap:16px;padding:48px 48px 0;">
         <div style="flex:1;height:1px;background:linear-gradient(to right,transparent,#334155);"></div>
         <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#475569;white-space:nowrap;letter-spacing:.1em;text-transform:uppercase;">Arquitetura Agêntica</span>
         <div style="flex:1;height:1px;background:linear-gradient(to left,transparent,#334155);"></div>
@@ -1615,25 +1616,34 @@ initDashboard();
     <div class="arq-inner">
 
         <!-- Hero -->
-        <section class="border border-slate-800 rounded-2xl bg-gradient-to-br from-[#0F1423] to-[#131B30] p-6 md:p-10 relative overflow-hidden shadow-2xl">
-            <div class="absolute top-0 right-0 p-8 opacity-10 pointer-events-none hidden lg:block">
-                <i class="fa-solid fa-robot text-9xl text-indigo-500"></i>
-            </div>
-            <div class="max-w-3xl">
-                <span class="text-indigo-400 font-mono text-sm uppercase tracking-widest font-semibold block mb-2">Um analista de dados sempre disponível</span>
-                <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-4">Arquitetura Agêntica Industrial</h1>
-                <p class="text-slate-300 leading-relaxed text-base md:text-lg mb-4">
-                    Imagine ter um <strong class="text-white">analista de dados ou cientista de dados</strong> disponível a qualquer momento, capaz de acessar os dados reais da sua operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos.
-                </p>
-                <p class="text-slate-400 leading-relaxed text-sm md:text-base">
-                    É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana e qual o impacto no OEE?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
-                </p>
-                <div class="mt-6 flex flex-wrap gap-3 text-xs font-mono">
-                    <span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">📊 Gráficos customizados</span>
-                    <span class="px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300">📋 Tabelas e spreadsheets</span>
-                    <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">📥 Relatórios PDF</span>
-                    <span class="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">⚡ Dados em tempo real</span>
-                    <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300">💬 Linguagem natural</span>
+        <section class="border border-slate-800 rounded-2xl bg-gradient-to-br from-[#0F1423] to-[#131B30] p-6 md:p-10 overflow-hidden shadow-2xl">
+            <div class="flex flex-col lg:flex-row gap-10 items-center">
+                <!-- Texto -->
+                <div class="flex-1 min-w-0">
+                    <span class="text-indigo-400 font-mono text-sm uppercase tracking-widest font-semibold block mb-2">Analista sempre disponível · Operação autônoma 24/7</span>
+                    <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-4">Arquitetura Agêntica Industrial</h1>
+                    <p class="text-slate-300 leading-relaxed text-base md:text-lg mb-4">
+                        Imagine ter um <strong class="text-white">analista de dados ou cientista de dados</strong> disponível a qualquer momento, capaz de acessar os dados reais da sua operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos. E quando você não está olhando, o sistema <strong class="text-white">continua trabalhando por conta própria</strong>.
+                    </p>
+                    <p class="text-slate-400 leading-relaxed text-sm md:text-base mb-3">
+                        O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+                    </p>
+                    <p class="text-slate-400 leading-relaxed text-sm md:text-base">
+                        Além da resposta imediata, o gestor pode <strong class="text-white">agendar qualquer ação recorrente</strong> via chat — em linguagem natural, da mesma forma. O agente escreve e valida o código Python de execução, que passa a rodar automaticamente no horário definido: enviando alertas, gerando relatórios, acionando sistemas externos ou tomando medidas em máquinas conectadas — <strong class="text-white">tudo sem intervenção humana</strong>.
+                    </p>
+                    <div class="mt-6 flex flex-wrap gap-3 text-xs font-mono">
+                        <span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">📊 Gráficos customizados</span>
+                        <span class="px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300">📋 Tabelas e spreadsheets</span>
+                        <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">📥 Relatórios PDF</span>
+                        <span class="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">⚡ Dados em tempo real</span>
+                        <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300">💬 Linguagem natural</span>
+                        <span class="px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-green-300">🕐 Agendamento autônomo</span>
+                        <span class="px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300">🏭 Ações em máquinas</span>
+                    </div>
+                </div>
+                <!-- Ícone decorativo -->
+                <div class="hidden lg:flex shrink-0 items-center justify-center w-64 h-64 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
+                    <i class="fa-solid fa-robot text-indigo-400/30" style="font-size:9rem;"></i>
                 </div>
             </div>
         </section>
@@ -1642,7 +1652,7 @@ initDashboard();
         <section class="bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-6">
             <h2 class="text-xs font-mono uppercase tracking-wider text-indigo-400 mb-3"><i class="fa-solid fa-compass"></i> A Arquitetura em uma frase</h2>
             <blockquote class="text-lg md:text-xl font-medium text-slate-200 italic leading-snug">
-                "Um <span class="text-indigo-400 underline decoration-indigo-400/40">orquestrador</span> que interpreta o pedido em linguagem natural delega para um <span class="text-indigo-400 underline decoration-indigo-400/40">sub-agente especialista</span> que consulta <span class="text-indigo-400 underline decoration-indigo-400/40">APIs e banco de dados em tempo real</span>, analisa os dados em sandbox Python e entrega gráficos, tabelas ou PDFs — tudo transmitido ao vivo via <span class="text-indigo-400 underline decoration-indigo-400/40">streaming SSE</span>, habilitando decisões rápidas e baseadas em informação."
+                "Um <span class="text-indigo-400 underline decoration-indigo-400/40">orquestrador</span> interpreta o pedido em linguagem natural: responde na hora com gráficos, tabelas ou PDFs via <span class="text-indigo-400 underline decoration-indigo-400/40">streaming SSE</span> — ou <span class="text-green-400 underline decoration-green-400/40">agenda a ação</span> para rodar automaticamente, gerando código Python validado que executa em <span class="text-green-400 underline decoration-green-400/40">sandbox determinístico</span> sem depender do LLM a cada ciclo: alertas, relatórios, comandos em máquinas, notificações — <span class="text-indigo-400 underline decoration-indigo-400/40">operação autônoma 24/7</span>."
             </blockquote>
         </section>
 
@@ -1654,48 +1664,60 @@ initDashboard();
             <p class="text-slate-400 text-sm mb-6">A espinha dorsal é um grafo de estados (StateGraph) isolado em dois níveis de decisão.</p>
             <div class="bg-[#0B0F19] p-6 rounded-lg overflow-auto border border-slate-900 mermaid-wrap">
                 <div class="mermaid">
-graph LR
-    User([Usuário]) --> Orch
+graph TD
+    User([Usuário])
 
-    subgraph Orch[Orquestrador]
-        OT["consultar_analista · gerenciar_agenda<br/>set_task_instructions · gerar_pdf<br/>gerar_excel · rag · calcular_periodo"]
+    User --> Orch
+
+    subgraph Orch["Orquestrador  ⟨guardian node⟩"]
+        OT["get_current_datetime · calcular_periodo · rag<br/>consultar_analista · gerar_pdf · gerar_excel<br/>gerenciar_agenda · set_task_instructions<br/>get_task_code · test_task_code · save_task_code"]
     end
 
-    Orch -->|delega análise| ANA
-    Orch -->|delega agenda| SCH
+    Orch -->|"resposta em texto<br/>via SSE / chat"| User
+    Orch -->|"delega análise<br/>(para_agendamento flag)"| ANA
+    Orch -->|"delega agenda<br/>(criar / listar / deletar / pausar)"| SCH
+    Orch -->|"resposta direta<br/>(sem agendamento)"| ACT
+    Orch -->|"lê / escreve direto<br/>(get/save task_code)"| DB
 
     subgraph ANA[Sub-Agente Analista]
-        AT["executar_codigo · chamar_api<br/>gerar_pdf · gerar_excel"]
+        AT["read_skill · chamar_api<br/>executar_sql · analisar_dataframe<br/>gerar_pdf · gerar_excel"]
     end
 
     subgraph SCH[Sub-Agente Scheduling]
-        ST["schedule_task · update_scheduled_task<br/>delete_scheduled_task · list_scheduled_tasks<br/>set_task_instructions"]
+        ST["schedule_task · update_scheduled_task<br/>delete_scheduled_task · toggle_pause_task<br/>list_scheduled_tasks · set_task_instructions<br/>get_task_instructions · get_task_code<br/>test_task_code · save_task_code<br/>get_task_code_versions · restore_task_code_version"]
     end
 
+    ANA -->|"resultado"| Orch
     ANA & SCH -->|lê / escreve| DB[("mfg.db")]
 
     DB -->|"active · next_run ≤ now"| DAEMON
 
-    subgraph DAEMON["Daemon · 120s"]
-        D["instructions → prompt guiado<br/>description → fallback<br/>invoke_multi_agent()"]
+    subgraph DAEMON["Daemon · verifica a cada 120s"]
+        RUNNER["runner.py — exec() sandbox<br/>pd · np · plt · ctx<br/>(sem import dentro de run)"]
     end
 
-    DAEMON -->|"UPDATE last_run / next_run"| DB
-    DAEMON --> REP[/"reports/"/]
+    DAEMON -->|"UPDATE last_run / next_run<br/>INSERT task_runs"| DB
+    RUNNER --> ACT
+
+    ACT["Ações possíveis<br/>──────────────<br/>📊 gráficos / PDFs / Excel<br/>📧 alertas por e-mail<br/>🏭 comandos em máquinas<br/>🔔 notificações externas<br/>… qualquer ctx.api()"]
+
+    ACT -->|"artefatos via SSE<br/>e-mail / notificações"| User
 
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
     classDef agent fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
     classDef storage fill:#0F2027,stroke:#0EA5E9,stroke-width:1px,color:#7DD3FC;
     classDef daemon fill:#1a2e1a,stroke:#22C55E,stroke-width:1px,color:#86EFAC;
     classDef output fill:#1a1a2e,stroke:#a78bfa,stroke-width:1px,color:#c4b5fd;
+    classDef user fill:#1a2535,stroke:#38BDF8,stroke-width:2px,color:#E0F2FE,font-weight:bold;
     class Orch,ANA,SCH agent;
     class DB storage;
     class DAEMON daemon;
-    class REP output;
+    class ACT output;
+    class User user;
                 </div>
             </div>
             <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-                O orquestrador coordena dois sub-agentes: o <strong>analista</strong> executa código Python e acessa a API REST; o <strong>scheduling</strong> gerencia a tabela <code>scheduled_tasks</code> no SQLite. <code>set_task_instructions</code> fica direto no orquestrador — ele é o único com contexto dos dois passos anteriores (criação + preview). Charts gerados durante um relatório são <strong>temporários</strong>: deletados automaticamente quando o PDF é salvo. O daemon verifica tarefas ativas a cada 120s sem LLM: usa as <code>instructions</code> validadas como guia ou a <code>description</code> como fallback.
+                O orquestrador possui um <strong>guardian node</strong> que força a sequência <code>get_task_code → save_task_code</code> (nunca deixa edição incompleta). O sub-agente <strong>analista</strong> acessa a API REST, executa SQL e gera PDF/Excel; quando chamado com <code>para_agendamento=True</code>, devolve um bloco <code>task_context</code> com endpoint, colunas e código pandas reais. O sub-agente <strong>scheduling</strong> gerencia tarefas e versiona o <code>task_code</code> com suporte a rollback. O daemon verifica tarefas a cada 120s: se há <code>task_code</code>, executa via <code>runner.py</code> num sandbox Python restrito (sem <code>import</code> dentro de <code>run()</code>); sem <code>task_code</code>, cai em modo LLM. As ações possíveis vão muito além de relatórios — qualquer coisa acessível via <code>ctx.api()</code>: gráficos, PDFs, alertas por e-mail, comandos em máquinas conectadas, notificações externas, etc.
             </p>
         </section>
 
@@ -1768,6 +1790,44 @@ graph LR
                     <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📊 Gráfico</span>
                     <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📋 Tabela</span>
                     <span class="px-2 py-1 rounded bg-slate-800 text-slate-400">📥 PDF</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Agendamento Autônomo -->
+        <section class="border border-green-500/20 rounded-xl bg-[#0a1a0f] p-6 relative overflow-hidden">
+            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-calendar-check text-[9rem]"></i></div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center justify-center text-green-400 shrink-0"><i class="fa-solid fa-calendar-check"></i></div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Agendamento Autônomo de Tarefas</h3>
+                    <span class="text-xs font-mono text-slate-400">Operação contínua sem intervenção humana</span>
+                </div>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed mb-5">O agente não apenas responde — ele <strong class="text-white">aprende uma tarefa e a executa sozinho</strong> no futuro. O gestor descreve em linguagem natural o que quer que aconteça e quando; o agente escreve, testa e salva o código Python de execução. A partir daí, o daemon roda o código diretamente no horário definido, sem passar pelo LLM.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-green-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-comment-dots"></i> 1. Descreva em chat</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">"Me mande a produção do dia todo dia às 7h" — o agente infere nome, frequência e horário. Sem formulários.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-green-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-code"></i> 2. Código gerado e validado</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">O orquestrador executa a análise ao vivo, observa os dados reais e escreve o <code>task_code</code> com endpoints e colunas verificados. Testa antes de salvar.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-green-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-gears"></i> 3. Execução determinística</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">O daemon roda o <code>runner.py</code> em sandbox restrito — sem LLM, sem variação. Retry automático com backoff. Histórico de versões com rollback.</p>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-4">
+                <p class="text-xs text-slate-500 mb-3 font-mono uppercase tracking-wider">Ações possíveis nas tarefas agendadas</p>
+                <div class="flex flex-wrap gap-2 text-xs font-mono">
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">📊 Gráficos e PDFs</span>
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">📋 Excel / planilhas</span>
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">📧 Alertas por e-mail</span>
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">🏭 Comandos em máquinas</span>
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">🔔 Notificações externas</span>
+                    <span class="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-300">🔁 Qualquer ctx.api()</span>
                 </div>
             </div>
         </section>
