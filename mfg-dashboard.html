@@ -1355,6 +1355,8 @@ async function refreshLineStatus() {
           <div class="line-prod">${l.produced.toLocaleString('pt-BR')} <span style="font-size:10px;color:var(--txt2);font-weight:400">un</span></div>
           <div class="line-fpy" style="color:var(--txt2)">FPY ${l.fpy.toFixed(1)}%</div>
           <div class="line-fpy" style="color:var(--txt3)">${p}% meta</div>
+          <div class="line-fpy" style="color:var(--txt2)">Vel. ${l.speed_pct}%</div>
+          <div class="line-fpy" style="color:var(--txt3);font-size:10px">${l.operator}</div>
         </div>
       </div>`;
     }).join('');
