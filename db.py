@@ -107,6 +107,20 @@ def shift_dates_to_today() -> int:
     return max_delta
 
 
+def migrate_db():
+    """Adiciona colunas user_id às tabelas que precisam de isolamento por usuário."""
+    with get_db() as conn:
+        for stmt in (
+            "ALTER TABLE scheduled_tasks ADD COLUMN user_id TEXT",
+            "ALTER TABLE threshold_alerts ADD COLUMN user_id TEXT",
+        ):
+            try:
+                conn.execute(stmt)
+            except Exception:
+                pass  # coluna já existe
+        conn.commit()
+
+
 def init_db():
     with get_db() as conn:
         conn.executescript("""
@@ -228,7 +242,8 @@ def init_db():
                 last_run     TEXT,
                 created_at   TEXT NOT NULL,
                 retry_count  INTEGER NOT NULL DEFAULT 0,
-                max_retries  INTEGER NOT NULL DEFAULT 3
+                max_retries  INTEGER NOT NULL DEFAULT 3,
+                user_id      TEXT
             );
 
             -- Histórico de versões de código das tarefas

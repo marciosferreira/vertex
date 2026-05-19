@@ -190,6 +190,62 @@
     width:0 !important; min-width:0 !important; border-left:none; overflow:hidden; pointer-events:none;
   }
 
+  /* body wrapper so history panel can overlay absolutely */
+  .chat-body { flex:1; display:flex; flex-direction:column; position:relative; overflow:hidden; min-height:0; }
+
+  /* ── History panel ── */
+  .chat-hist-panel {
+    position:absolute; inset:0; background:#0d1626; z-index:5;
+    display:flex; flex-direction:column;
+    transform:translateX(100%); transition:transform .2s ease;
+  }
+  .chat-hist-panel.open { transform:translateX(0); }
+
+  .chat-hist-head {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; border-bottom:1px solid rgba(56,189,248,.15); flex-shrink:0;
+  }
+  .chat-hist-label {
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.14em;
+    color:var(--cyan); font-weight:700;
+  }
+  .chat-hist-close {
+    background:none; border:1px solid var(--border); color:var(--txt2);
+    font-size:11px; padding:2px 7px; cursor:pointer; border-radius:4px; transition:all .15s;
+  }
+  .chat-hist-close:hover { border-color:var(--cyan); color:var(--cyan); }
+
+  .chat-hist-list { flex:1; overflow-y:auto; }
+  .chat-hist-list::-webkit-scrollbar { width:3px; }
+  .chat-hist-list::-webkit-scrollbar-thumb { background:rgba(56,189,248,.18); border-radius:2px; }
+
+  .chat-hist-new {
+    display:flex; align-items:center; gap:8px; width:100%;
+    padding:13px 16px; background:none; border:none;
+    border-bottom:1px solid rgba(56,189,248,.1);
+    color:var(--cyan); font-size:12px;
+    font-family:'JetBrains Mono',monospace; letter-spacing:.05em;
+    cursor:pointer; text-align:left; flex-shrink:0; transition:background .15s;
+  }
+  .chat-hist-new:hover { background:rgba(56,189,248,.06); }
+
+  .chat-hist-item {
+    display:flex; flex-direction:column; gap:3px;
+    padding:11px 16px; cursor:pointer;
+    border-left:2px solid transparent; transition:all .15s;
+    border-bottom:1px solid rgba(255,255,255,.03);
+  }
+  .chat-hist-item:hover { background:rgba(255,255,255,.03); border-left-color:rgba(56,189,248,.3); }
+  .chat-hist-item.active { background:rgba(56,189,248,.06); border-left-color:var(--cyan); }
+  .chi-title {
+    font-size:12px; color:var(--txt); line-height:1.4;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .chat-hist-item.active .chi-title { color:var(--cyan); }
+  .chi-meta { font-size:10px; color:var(--txt2); font-family:'JetBrains Mono',monospace; }
+
+  .chat-hist-empty { text-align:center; color:var(--txt2); font-size:12px; padding:24px 16px; }
+
   /* drag handle */
   .chat-resize-handle {
     position:absolute; left:0; top:0; bottom:0; width:5px;
@@ -537,7 +593,7 @@
   <!-- Header do painel -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
     <div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6366f1;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">Relatórios Agendados</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#6366f1;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">Agendamentos</div>
       <div style="font-size:15px;font-weight:600;color:#f8fafc;">Tarefas</div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
@@ -925,21 +981,30 @@
       <button class="chat-collapse-btn" onclick="closeChat()" title="Fechar chat">✕</button>
     </div>
     <div class="chat-head-sub" style="display:flex;align-items:center;justify-content:space-between;">
-      <span>Pergunte sobre os dados, solicite gráficos, análises estatistica ou relatórios.</span>
-      <button onclick="newChat()" title="Nova conversa" style="background:none;border:1px solid rgba(56,189,248,.25);color:var(--cyan);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;padding:3px 9px;cursor:pointer;border-radius:4px;transition:all .15s;" onmouseenter="this.style.background='rgba(56,189,248,.1)'" onmouseleave="this.style.background='none'">+ NOVA</button>
+      <span>Pergunte sobre os dados, solicite gráficos, análises estatística ou relatórios.</span>
+      <button onclick="showHistory()" title="Conversas" style="background:none;border:1px solid rgba(56,189,248,.25);color:var(--cyan);font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;padding:3px 9px;cursor:pointer;border-radius:4px;transition:all .15s;" onmouseenter="this.style.background='rgba(56,189,248,.1)'" onmouseleave="this.style.background='none'">≡ CONVERSAS</button>
     </div>
   </div>
-  <div class="chat-msgs" id="chatMsgs"></div>
-  <div class="chat-input-wrap">
-    <textarea class="chat-input" id="chatInput" rows="1"
-      placeholder="Ex: qual turno tem mais defeitos?"
-      onkeydown="chatKeydown(event)"></textarea>
-    <div class="audio-review" id="audioReview">
-      <audio id="audioPlayer" controls></audio>
-      <button class="audio-discard" id="audioDiscardBtn" onclick="discardAudio()" title="Descartar gravação">✕</button>
+  <div class="chat-body">
+    <div class="chat-msgs" id="chatMsgs"></div>
+    <div class="chat-input-wrap">
+      <textarea class="chat-input" id="chatInput" rows="1"
+        placeholder="Ex: qual turno tem mais defeitos?"
+        onkeydown="chatKeydown(event)"></textarea>
+      <div class="audio-review" id="audioReview">
+        <audio id="audioPlayer" controls></audio>
+        <button class="audio-discard" id="audioDiscardBtn" onclick="discardAudio()" title="Descartar gravação">✕</button>
+      </div>
+      <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
+      <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
     </div>
-    <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
-    <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
+    <div class="chat-hist-panel" id="chatHistPanel">
+      <div class="chat-hist-head">
+        <span class="chat-hist-label">CONVERSAS</span>
+        <button class="chat-hist-close" onclick="hideHistory()">✕</button>
+      </div>
+      <div class="chat-hist-list" id="chatHistList"></div>
+    </div>
   </div>
 </aside>
 
@@ -1343,16 +1408,102 @@ async function initDashboard() {
 }
 
 // ── CHAT ──────────────────────────────────────────────
-let _sessionId = crypto.randomUUID();
+// _userId persiste entre reloads — identifica o usuário neste browser
+let _userId = localStorage.getItem('mfg_user_id');
+if (!_userId) { _userId = crypto.randomUUID(); localStorage.setItem('mfg_user_id', _userId); }
+
+// _sessionId persiste entre reloads para restaurar a conversa ativa
+let _sessionId = localStorage.getItem('mfg_session_id') || _userId;
+function _setSession(id) { _sessionId = id; localStorage.setItem('mfg_session_id', id); }
 let _msgId = 0;
 
 const _welcomeMsg = 'Olá! Como posso te ajudar hoje?';
 
+async function loadChatHistory() {
+  try {
+    const res = await fetch(`${API_BASE}/chat/history?session_id=${_sessionId}`);
+    const msgs = await res.json();
+    if (!Array.isArray(msgs) || msgs.length === 0) {
+      _addMsg('assistant', _welcomeMsg);
+      return;
+    }
+    for (const m of msgs) {
+      if (m.role === 'user') {
+        _addMsg('user', m.content.replace(/</g, '&lt;'));
+      } else if (m.role === 'assistant' && m.content.trim()) {
+        _addMsg('assistant', marked.parse(m.content));
+      }
+    }
+  } catch (e) {
+    _addMsg('assistant', _welcomeMsg);
+  }
+}
+
 function newChat() {
-  _sessionId = crypto.randomUUID();
+  _setSession(_userId + '_' + Date.now());
   const msgs = document.getElementById('chatMsgs');
   msgs.innerHTML = '';
   _addMsg('assistant', _welcomeMsg);
+}
+
+// ── Conversation history ───────────────────────────────
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadSessions() {
+  const list = document.getElementById('chatHistList');
+  list.innerHTML = '<div class="chat-hist-empty">Carregando...</div>';
+  try {
+    const res = await fetch(`${API_BASE}/chat/sessions?user_id=${_userId}`);
+    const sessions = await res.json();
+
+    list.innerHTML = '';
+
+    const newBtn = document.createElement('button');
+    newBtn.className = 'chat-hist-new';
+    newBtn.textContent = '+ Nova conversa';
+    newBtn.onclick = () => { newChat(); hideHistory(); };
+    list.appendChild(newBtn);
+
+    if (!Array.isArray(sessions) || !sessions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'chat-hist-empty';
+      empty.textContent = 'Nenhuma conversa anterior.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const s of sessions) {
+      const item = document.createElement('div');
+      item.className = 'chat-hist-item' + (s.session_id === _sessionId ? ' active' : '');
+      item.innerHTML =
+        `<div class="chi-title">${_escHtml(s.title)}</div>` +
+        `<div class="chi-meta">${s.message_count} mensagem${s.message_count !== 1 ? 's' : ''}</div>`;
+      item.onclick = () => switchSession(s.session_id);
+      list.appendChild(item);
+    }
+  } catch (e) {
+    list.innerHTML = '<div class="chat-hist-empty">Erro ao carregar histórico.</div>';
+  }
+}
+
+function showHistory() {
+  loadSessions();
+  document.getElementById('chatHistPanel').classList.add('open');
+}
+
+function hideHistory() {
+  document.getElementById('chatHistPanel').classList.remove('open');
+}
+
+async function switchSession(sessionId) {
+  if (sessionId === _sessionId) { hideHistory(); return; }
+  _setSession(sessionId);
+  hideHistory();
+  document.getElementById('chatMsgs').innerHTML = '';
+  await loadChatHistory();
 }
 
 function _addMsg(role, html) {
@@ -2290,7 +2441,7 @@ async function loadAgenda() {
   const list = document.getElementById('agendaList');
   list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
   try {
-    const res = await fetch('/tasks');
+    const res = await fetch(`/tasks?user_id=${_userId}`);
     const tasks = await res.json();
     const active = tasks.filter(t => t.status !== 'cancelled');
     // badge no botão
@@ -2314,7 +2465,7 @@ async function runTaskNow(id, btn) {
   btn.textContent = '…';
   btn.style.color = '#94a3b8';
   try {
-    const res = await fetch(`/tasks/${id}/run-now`, { method: 'POST' });
+    const res = await fetch(`/tasks/${id}/run-now?user_id=${_userId}`, { method: 'POST' });
     const d = await res.json();
     if (!res.ok) { alert(d.message); }
     else {
@@ -2327,14 +2478,14 @@ async function runTaskNow(id, btn) {
 
 async function deleteTask(id) {
   if (!confirm(`Remover tarefa [${id}]?`)) return;
-  await fetch(`/tasks/${id}`, { method: 'DELETE' });
+  await fetch(`/tasks/${id}?user_id=${_userId}`, { method: 'DELETE' });
   loadAgenda();
 }
 
 async function togglePauseTask(id, btn) {
   btn.disabled = true;
   try {
-    const res  = await fetch(`/tasks/${id}/toggle-pause`, { method: 'POST' });
+    const res  = await fetch(`/tasks/${id}/toggle-pause?user_id=${_userId}`, { method: 'POST' });
     const data = await res.json();
     if (data.ok) loadAgenda();
     else { alert(data.message || 'Erro ao alterar status.'); btn.disabled = false; }
@@ -2530,9 +2681,11 @@ function closeArtifacts() {
   }, 260);
 }
 
-// carrega badge ao iniciar
+// carrega histórico do chat e badges ao iniciar
 document.addEventListener('DOMContentLoaded', () => {
-  fetch('/tasks').then(r => r.json()).then(tasks => {
+  loadChatHistory();
+
+  fetch(`/tasks?user_id=${_userId}`).then(r => r.json()).then(tasks => {
     const n = tasks.filter(t => t.status === 'active').length;
     const badge = document.getElementById('agendaBadge');
     if (n > 0) { badge.textContent = n; badge.style.display = 'inline'; }
@@ -2574,7 +2727,7 @@ function closeAlertsPanel() {
 async function loadAlerts() {
   const list = document.getElementById('alertsList');
   try {
-    const res = await fetch('/alerts?all=true');
+    const res = await fetch(`/alerts?all=true&user_id=${_userId}`);
     const alerts = await res.json();
     if (!alerts.length) {
       list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>';
@@ -2607,7 +2760,7 @@ async function loadAlerts() {
 }
 
 async function markAlertRead(alertId, el) {
-  await fetch(`/alerts/${alertId}/read`, { method: 'POST' });
+  await fetch(`/alerts/${alertId}/read?user_id=${_userId}`, { method: 'POST' });
   el.style.borderLeftColor = '#1e293b';
   el.style.background = '#0d1117';
   el.querySelector('div > div:first-child').style.color = '#94a3b8';
@@ -2618,20 +2771,20 @@ async function markAlertRead(alertId, el) {
 }
 
 async function markAllAlertsRead() {
-  await fetch('/alerts/read-all', { method: 'POST' });
+  await fetch(`/alerts/read-all?user_id=${_userId}`, { method: 'POST' });
   loadAlerts();
   updateAlertsBadge();
 }
 
 async function deleteAllAlerts() {
-  await fetch('/alerts', { method: 'DELETE' });
+  await fetch(`/alerts?user_id=${_userId}`, { method: 'DELETE' });
   const list = document.getElementById('alertsList');
   list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>';
   updateAlertsBadge();
 }
 
 async function deleteAlert(alertId) {
-  await fetch(`/alerts/${alertId}`, { method: 'DELETE' });
+  await fetch(`/alerts/${alertId}?user_id=${_userId}`, { method: 'DELETE' });
   const el = document.getElementById(`alert-${alertId}`);
   if (el) el.remove();
   const list = document.getElementById('alertsList');
@@ -2643,7 +2796,7 @@ async function deleteAlert(alertId) {
 
 async function updateAlertsBadge() {
   try {
-    const res = await fetch('/alerts');
+    const res = await fetch(`/alerts?user_id=${_userId}`);
     const unread = await res.json();
     const badge = document.getElementById('alertsBadge');
     if (unread.length > 0) {

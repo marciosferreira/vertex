@@ -9,8 +9,9 @@ from datetime import date, timedelta
 
 
 class TaskContext:
-    def __init__(self, session_id: str, backend_url: str = "http://localhost:8000"):
+    def __init__(self, session_id: str, backend_url: str = "http://localhost:8000", user_id: str | None = None):
         self.session_id = session_id
+        self.user_id    = user_id
         self._backend_url = backend_url.rstrip("/")
         self._tokens: list[str] = []
 
@@ -158,7 +159,7 @@ class TaskContext:
             threshold: Valor de referência (opcional, exibido no painel).
         """
         import chart_store
-        chart_store.save_alert(self.session_id, message, value, threshold)
+        chart_store.save_alert(self.session_id, message, value, threshold, user_id=self.user_id)
 
     def notify_alert(self, message: str, value: float | None = None, threshold: float | None = None) -> None:
         """Alias de notify() — mantido para compatibilidade com task_codes existentes."""

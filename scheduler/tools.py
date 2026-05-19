@@ -2,6 +2,7 @@
 LangChain tools do scheduler — usam SQLite via db.get_db().
 """
 
+import re as _re
 from datetime import datetime
 from typing import Optional
 
@@ -9,6 +10,16 @@ from langchain_core.tools import tool
 
 from db import get_db
 from .md_parser import calculate_next_run
+
+_MIN_INTERVAL_MINUTES = 5
+
+
+def _validate_frequency(frequency: str) -> str | None:
+    """Retorna mensagem de erro se a frequência for inválida, None se OK."""
+    m = _re.match(r'every_(\d+)m$', frequency)
+    if m and int(m.group(1)) < _MIN_INTERVAL_MINUTES:
+        return f"Intervalo mínimo permitido é {_MIN_INTERVAL_MINUTES} minutos. Use 'every_{_MIN_INTERVAL_MINUTES}m' ou maior."
+    return None
 
 
 _WEEKDAY_PT = {
@@ -90,9 +101,21 @@ def _row_to_dict(row) -> dict:
     return dict(row) if row else {}
 
 
-def _all_tasks() -> list[dict]:
+def _current_user_id() -> str | None:
+    try:
+        from agent_multi import _current_session
+        sid = _current_session.get("")
+        return sid[:36] if sid else None
+    except Exception:
+        return None
+
+
+def _all_tasks(user_id: str | None = None) -> list[dict]:
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM scheduled_tasks ORDER BY id").fetchall()
+        if user_id:
+            rows = conn.execute("SELECT * FROM scheduled_tasks WHERE user_id=? ORDER BY id", (user_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM scheduled_tasks ORDER BY id").fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -129,21 +152,26 @@ def schedule_task(
                           "friday" | "saturday" | "sunday"
         day: Obrigatório se frequency="monthly". Dia do mês (ex: "1", "15").
     """
+    err = _validate_frequency(frequency)
+    if err:
+        return err
+
     task_id = _next_id()
+    user_id = _current_user_id()
     next_run = calculate_next_run(frequency, time, weekday, day)
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with get_db() as conn:
         conn.execute(
             """INSERT INTO scheduled_tasks
                (id, name, description, instructions, frequency, time, weekday,
-                day, email, status, next_run, last_run, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,'active',?,NULL,?)""",
+                day, email, status, next_run, last_run, created_at, user_id)
+               VALUES (?,?,?,?,?,?,?,?,?,'active',?,NULL,?,?)""",
             (task_id, name, description, instructions, frequency, time,
-             weekday, day, email, next_run, now),
+             weekday, day, email, next_run, now, user_id),
         )
         conn.commit()
 
-    tasks = _all_tasks()
+    tasks = _all_tasks(user_id)
     return (
         f"Tarefa **[{task_id}]** criada e ativa. Próxima execução agendada: {next_run}\n\n"
         + _format_list(tasks)
@@ -174,7 +202,8 @@ def set_task_instructions(task_id: str, instructions: str) -> str:
         )
         conn.commit()
 
-    tasks = _all_tasks()
+    uid = _current_user_id()
+    tasks = _all_tasks(uid)
     return (
         f"Instruções da tarefa **[{task_id}]** definidas. Status: ✅ ativa.\n\n"
         + _format_list(tasks)
@@ -184,7 +213,7 @@ def set_task_instructions(task_id: str, instructions: str) -> str:
 @tool
 def list_scheduled_tasks() -> str:
     """Lista todas as tarefas agendadas com status, frequência e descrição."""
-    return _format_list(_all_tasks())
+    return _format_list(_all_tasks(_current_user_id()))
 
 
 @tool
@@ -229,10 +258,11 @@ def toggle_pause_task(task_id: str) -> str:
         conn.execute("UPDATE scheduled_tasks SET status=? WHERE id=?", (new_status, task_id))
         conn.commit()
 
+    uid = _current_user_id()
     action = "pausada" if new_status == "paused" else "retomada"
     return (
         f"Tarefa **[{task_id}]** {action}.\n\n"
-        + _format_list(_all_tasks())
+        + _format_list(_all_tasks(uid))
     )
 
 
@@ -243,12 +273,13 @@ def delete_scheduled_task(task_id: str) -> str:
     Args:
         task_id: ID da tarefa (ex: "001"). Use list_scheduled_tasks para ver os IDs.
     """
+    uid = _current_user_id()
     with get_db() as conn:
         row = conn.execute(
             "SELECT name FROM scheduled_tasks WHERE id = ?", (task_id,)
         ).fetchone()
         if not row:
-            ids = [r['id'] for r in conn.execute("SELECT id FROM scheduled_tasks").fetchall()]
+            ids = [r['id'] for r in conn.execute("SELECT id FROM scheduled_tasks WHERE user_id=?", (uid,)).fetchall()]
             return f"Tarefa '{task_id}' não encontrada. IDs existentes: {ids}"
         name = row['name']
         conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
@@ -256,10 +287,9 @@ def delete_scheduled_task(task_id: str) -> str:
         conn.execute("DELETE FROM task_code_versions WHERE task_id = ?", (task_id,))
         conn.commit()
 
-    tasks = _all_tasks()
     return (
         f"Tarefa **[{task_id}]** ({name}) removida.\n\n"
-        + _format_list(tasks)
+        + _format_list(_all_tasks(uid))
     )
 
 
@@ -310,6 +340,9 @@ def update_scheduled_task(
         if day is not None:
             updates['day'] = day
         if frequency is not None:
+            err = _validate_frequency(frequency)
+            if err:
+                return err
             updates['frequency'] = frequency
         if time is not None:
             updates['time'] = time
@@ -333,10 +366,10 @@ def update_scheduled_task(
         )
         conn.commit()
 
-    tasks = _all_tasks()
+    uid = _current_user_id()
     return (
         f"Tarefa **[{task_id}]** atualizada. Campos: {', '.join(updates)}\n\n"
-        + _format_list(tasks)
+        + _format_list(_all_tasks(uid))
     )
 
 

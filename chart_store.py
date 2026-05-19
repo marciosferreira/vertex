@@ -62,7 +62,8 @@ def init_chart_store(db_path: Path) -> None:
             value      REAL,
             threshold  REAL,
             created_at TEXT NOT NULL,
-            read       INTEGER NOT NULL DEFAULT 0
+            read       INTEGER NOT NULL DEFAULT 0,
+            user_id    TEXT
         )
     """)
     _conn.commit()
@@ -105,6 +106,17 @@ def delete_chart(chart_id: str) -> None:
     with _lock:
         _conn.execute("DELETE FROM charts WHERE chart_id = ?", (chart_id,))
         _conn.commit()
+
+
+def delete_all_charts() -> int:
+    if _conn is None:
+        return 0
+    with _lock:
+        c = _conn.execute("DELETE FROM charts").rowcount
+        p = _conn.execute("DELETE FROM pdfs").rowcount
+        e = _conn.execute("DELETE FROM excels").rowcount
+        _conn.commit()
+    return c + p + e
 
 
 def delete_charts_for_session(session_id: str) -> None:
@@ -214,37 +226,45 @@ def delete_artifact(artifact_type: str, artifact_id: str) -> bool:
     return cur.rowcount > 0
 
 
-def save_alert(session_id: str, message: str, value: float | None = None, threshold: float | None = None) -> str:
+def save_alert(session_id: str, message: str, value: float | None = None, threshold: float | None = None, user_id: str | None = None) -> str:
     if _conn is None:
         raise RuntimeError("chart_store não inicializado.")
     import re
     m = re.match(r'^daemon_(\w+)_', session_id)
     task_id = m.group(1) if m else None
     alert_id = str(uuid.uuid4())
-    # Cast to native Python float — numpy/pandas numeric types serialize as BLOB
     safe_value     = float(value)     if value     is not None else None
     safe_threshold = float(threshold) if threshold is not None else None
     with _lock:
         _conn.execute(
-            "INSERT INTO threshold_alerts (id, task_id, message, value, threshold, created_at, read) VALUES (?, ?, ?, ?, ?, ?, 0)",
-            (alert_id, task_id, message, safe_value, safe_threshold, _now()),
+            "INSERT INTO threshold_alerts (id, task_id, message, value, threshold, created_at, read, user_id) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (alert_id, task_id, message, safe_value, safe_threshold, _now(), user_id),
         )
         _conn.commit()
     return alert_id
 
 
-def get_alerts(unread_only: bool = True) -> list[dict]:
+def get_alerts(unread_only: bool = True, user_id: str | None = None) -> list[dict]:
     if _conn is None:
         return []
+    base = "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts"
+    clauses = [] if user_id is None else ["user_id = ?"]
+    if unread_only:
+        clauses.append("read = 0")
+    where = (f" WHERE {' AND '.join(clauses)}" if clauses else "")
+    params = ([user_id] if user_id else []) + ([] if not unread_only else [])
+    # rebuild cleanly
+    if user_id and unread_only:
+        sql, params = base + " WHERE user_id=? AND read=0 ORDER BY created_at DESC", (user_id,)
+    elif user_id:
+        sql, params = base + " WHERE user_id=? ORDER BY created_at DESC LIMIT 100", (user_id,)
+    elif unread_only:
+        sql, params = base + " WHERE read=0 ORDER BY created_at DESC", ()
+    else:
+        sql, params = base + " ORDER BY created_at DESC LIMIT 100", ()
     with _lock:
-        if unread_only:
-            rows = _conn.execute(
-                "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts WHERE read=0 ORDER BY created_at DESC"
-            ).fetchall()
-        else:
-            rows = _conn.execute(
-                "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
+        rows = _conn.execute(sql, params).fetchall()
+
     def _real(v):
         if isinstance(v, bytes):
             import struct
@@ -261,38 +281,56 @@ def get_alerts(unread_only: bool = True) -> list[dict]:
     ]
 
 
-def mark_alert_read(alert_id: str) -> bool:
+def mark_alert_read(alert_id: str, user_id: str | None = None) -> bool:
     if _conn is None:
         return False
+    sql = "UPDATE threshold_alerts SET read=1 WHERE id=?"
+    params: tuple = (alert_id,)
+    if user_id:
+        sql += " AND user_id=?"
+        params = (alert_id, user_id)
     with _lock:
-        cur = _conn.execute("UPDATE threshold_alerts SET read=1 WHERE id=?", (alert_id,))
+        cur = _conn.execute(sql, params)
         _conn.commit()
     return cur.rowcount > 0
 
 
-def mark_all_alerts_read() -> int:
+def mark_all_alerts_read(user_id: str | None = None) -> int:
     if _conn is None:
         return 0
+    if user_id:
+        sql, params = "UPDATE threshold_alerts SET read=1 WHERE read=0 AND user_id=?", (user_id,)
+    else:
+        sql, params = "UPDATE threshold_alerts SET read=1 WHERE read=0", ()
     with _lock:
-        cur = _conn.execute("UPDATE threshold_alerts SET read=1 WHERE read=0")
+        cur = _conn.execute(sql, params)
         _conn.commit()
     return cur.rowcount
 
 
-def delete_all_alerts() -> int:
+def delete_all_alerts(user_id: str | None = None) -> int:
     if _conn is None:
         return 0
+    if user_id:
+        sql, params = "DELETE FROM threshold_alerts WHERE user_id=?", (user_id,)
+    else:
+        sql, params = "DELETE FROM threshold_alerts", ()
     with _lock:
-        cur = _conn.execute("DELETE FROM threshold_alerts")
+        cur = _conn.execute(sql, params)
         _conn.commit()
     return cur.rowcount
 
 
-def delete_alert(alert_id: str) -> bool:
+def delete_alert(alert_id: str, user_id: str | None = None) -> bool:
     if _conn is None:
         return False
+    sql = "DELETE FROM threshold_alerts WHERE id=?"
+    params: tuple = (alert_id,)
+    if user_id:
+        sql += " AND user_id=?"
+        params = (alert_id, user_id)
     with _lock:
-        cur = _conn.execute("DELETE FROM threshold_alerts WHERE id = ?", (alert_id,))
+        cur = _conn.execute(sql, params)
         _conn.commit()
     return cur.rowcount > 0
 

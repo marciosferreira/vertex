@@ -162,8 +162,10 @@ def _execute_task(task: dict) -> None:
 
         from_date, to_date = _date_range_for_task(task)
 
+        user_id = task.get("user_id")
+
         def _run_code():
-            tokens = run_task_code(task["task_code"], from_date, to_date, session_id)
+            tokens = run_task_code(task["task_code"], from_date, to_date, session_id, user_id=user_id)
             return " ".join(tokens)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:

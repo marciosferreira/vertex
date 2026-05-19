@@ -1150,6 +1150,12 @@ MAX_INTERACOES = int(os.getenv("MAX_INTERACOES", "10"))
 def _build_orchestrator(llm, checkpointer=None):
     ORQ_SYSTEM_PROMPT = (
         "Você é o agente orquestrador de um sistema de monitoramento industrial.\n\n"
+        "## HISTÓRICO DE CONVERSA\n"
+        "As mensagens acima (antes desta instrução) são o histórico completo desta sessão, "
+        "incluindo perguntas e respostas anteriores ao último refresh da página do usuário. "
+        "NUNCA diga que não tem memória de conversas anteriores — você tem acesso total ao "
+        "histórico desta sessão. Se o usuário perguntar o que perguntou antes, o que foi "
+        "analisado, ou pedir para repetir algo, consulte as mensagens anteriores.\n\n"
         "## ROTEAMENTO — leia isto antes de qualquer ação\n"
         "Classifique o pedido do usuário em UMA das categorias abaixo e siga APENAS o fluxo correspondente:\n\n"
         "  A) CONSULTA PONTUAL — o usuário quer ver dados, gráficos, tabelas ou análises AGORA.\n"

@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from db import get_db, init_db, shift_dates_to_today, LINE_MODEL
+from db import get_db, init_db, migrate_db, shift_dates_to_today, LINE_MODEL
 
 MODEL_LINE = {v: k for k, v in LINE_MODEL.items()}  # "PhoneX Pro" → 1, etc.
 
@@ -169,12 +169,49 @@ async def handler_422(request: Request, exc: Exception):
     )
 
 
+def _demo_reset():
+    """Apaga todos os dados gerados por usuários (tarefas, runs, alertas, artefatos, histórico de chat).
+    Os dados operacionais (produção, defeitos, métricas) são preservados.
+    Chamado automaticamente à meia-noite para manter o banco enxuto em ambiente de demo.
+    """
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM scheduled_tasks")
+            conn.execute("DELETE FROM task_runs")
+            conn.execute("DELETE FROM task_code_versions")
+            conn.execute("UPDATE task_id_sequence SET next_id = 1 WHERE id = 1")
+            # Limpa tabelas do checkpointer LangGraph (histórico de conversa)
+            for tbl in ("checkpoints", "writes"):
+                try:
+                    conn.execute(f"DELETE FROM {tbl}")
+                except Exception:
+                    pass
+            conn.commit()
+
+        # Alertas e artefatos ficam em uma conexão separada (chart_store)
+        cs.delete_all_alerts()
+        cs.delete_all_charts()
+
+        # Limpa namespaces Python em memória
+        try:
+            from agent_multi import _namespaces
+            _namespaces.clear()
+        except Exception:
+            pass
+
+        logger.info("Demo reset executado à meia-noite — dados de usuário removidos.")
+    except Exception:
+        logger.exception("Falha no demo reset")
+
+
 async def _daily_date_shifter():
     """Background task: waits until next midnight, then shifts DB dates forward by 1 day. Repeats forever."""
     while True:
         now = datetime.now()
         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         await asyncio.sleep((next_midnight - now).total_seconds())
+        if os.getenv("DEMO_RESET", "false").lower() == "true":
+            _demo_reset()
         delta = shift_dates_to_today()
         if delta:
             logger.info("Date shift automático aplicado: +%d dia(s)", delta)
@@ -183,6 +220,7 @@ async def _daily_date_shifter():
 @app.on_event("startup")
 async def startup():
     init_db()
+    migrate_db()
     _init_vertex()
     delta = shift_dates_to_today()
     if delta:
@@ -315,6 +353,82 @@ async def chat_stream(request: Request, message: str, session_id: str = "default
             yield {"data": json.dumps(event)}
 
     return EventSourceResponse(generate())
+
+
+@app.get("/chat/history")
+async def chat_history(session_id: str = "default"):
+    """Retorna o histórico de mensagens de uma sessão (HumanMessage e AIMessage apenas)."""
+    if not is_multi_agent_ready():
+        return []
+    try:
+        from agent_multi import _checkpointer
+        if _checkpointer is None:
+            return []
+        state = _checkpointer.get({"configurable": {"thread_id": session_id}})
+        if not state:
+            return []
+        from langchain_core.messages import HumanMessage, AIMessage
+        result = []
+        for msg in state.get("channel_values", {}).get("messages", []):
+            if isinstance(msg, HumanMessage):
+                result.append({"role": "user", "content": msg.content if isinstance(msg.content, str) else ""})
+            elif isinstance(msg, AIMessage):
+                content = msg.content
+                if isinstance(content, list):
+                    content = " ".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+                result.append({"role": "assistant", "content": _embed_charts(content)})
+        return result
+    except Exception:
+        return []
+
+
+@app.get("/chat/sessions")
+async def list_chat_sessions(user_id: str = Query(default=None)):
+    """Lista todas as sessões de chat de um usuário com título e contagem de mensagens."""
+    if not is_multi_agent_ready() or not user_id:
+        return []
+    try:
+        from agent_multi import _checkpointer
+        from langchain_core.messages import HumanMessage, AIMessage
+        if _checkpointer is None:
+            return []
+        conn = _checkpointer.conn
+        rows = conn.execute(
+            "SELECT thread_id, MAX(checkpoint_id) as latest FROM checkpoints "
+            "WHERE thread_id = ? OR thread_id LIKE ? "
+            "GROUP BY thread_id ORDER BY latest DESC",
+            (user_id, user_id + "_%"),
+        ).fetchall()
+        sessions = []
+        for row in rows:
+            tid = row[0]
+            state = _checkpointer.get({"configurable": {"thread_id": tid}})
+            if not state:
+                continue
+            msgs = state.get("channel_values", {}).get("messages", [])
+            human_msgs = [
+                m for m in msgs
+                if isinstance(m, HumanMessage)
+                and not str(getattr(m, "content", "")).startswith("[VALIDAÇÃO")
+            ]
+            if not human_msgs:
+                continue
+            title = str(human_msgs[0].content)[:70].strip() or "(sem título)"
+            visible_count = sum(
+                1 for m in msgs
+                if isinstance(m, (HumanMessage, AIMessage))
+                and not getattr(m, "tool_calls", None)
+                and not str(getattr(m, "content", "")).startswith("[VALIDAÇÃO")
+            )
+            sessions.append({
+                "session_id": tid,
+                "title": title,
+                "message_count": visible_count,
+            })
+        return sessions
+    except Exception:
+        logger.exception("Erro em /chat/sessions")
+        return []
 
 
 @app.post("/chat/transcribe")
@@ -466,18 +580,30 @@ def demo_reduce():
 # ── agenda ────────────────────────────────────────────────────────────────────
 
 @app.get("/tasks")
-def get_tasks():
+def get_tasks(user_id: str = Query(default=None)):
     """Retorna as tarefas agendadas com as últimas 5 execuções de cada uma."""
     with get_db() as conn:
-        tasks = conn.execute(
-            "SELECT id, name, description, frequency, time, weekday, day, "
-            "email, status, next_run, last_run, created_at, retry_count, max_retries "
-            "FROM scheduled_tasks ORDER BY id"
-        ).fetchall()
-        runs = conn.execute(
-            "SELECT id, task_id, started_at, ended_at, status, error "
-            "FROM task_runs ORDER BY started_at DESC"
-        ).fetchall()
+        if user_id:
+            tasks = conn.execute(
+                "SELECT id, name, description, frequency, time, weekday, day, "
+                "email, status, next_run, last_run, created_at, retry_count, max_retries "
+                "FROM scheduled_tasks WHERE user_id=? ORDER BY id", (user_id,)
+            ).fetchall()
+        else:
+            tasks = conn.execute(
+                "SELECT id, name, description, frequency, time, weekday, day, "
+                "email, status, next_run, last_run, created_at, retry_count, max_retries "
+                "FROM scheduled_tasks ORDER BY id"
+            ).fetchall()
+        task_ids = tuple(dict(t)["id"] for t in tasks)
+        runs = (
+            conn.execute(
+                f"SELECT id, task_id, started_at, ended_at, status, error "
+                f"FROM task_runs WHERE task_id IN ({','.join('?'*len(task_ids))}) ORDER BY started_at DESC",
+                task_ids,
+            ).fetchall()
+            if task_ids else []
+        )
 
     runs_by_task: dict = {}
     for r in runs:
@@ -495,9 +621,13 @@ def get_tasks():
 
 
 @app.get("/tasks/{task_id}/runs")
-def get_task_runs(task_id: str):
+def get_task_runs(task_id: str, user_id: str = Query(default=None)):
     """Retorna o histórico completo de execuções de uma tarefa."""
     with get_db() as conn:
+        if user_id:
+            exists = conn.execute("SELECT id FROM scheduled_tasks WHERE id=? AND user_id=?", (task_id, user_id)).fetchone()
+            if not exists:
+                return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
         rows = conn.execute(
             "SELECT * FROM task_runs WHERE task_id=? ORDER BY started_at DESC",
             (task_id,),
@@ -506,11 +636,12 @@ def get_task_runs(task_id: str):
 
 
 @app.post("/tasks/{task_id}/run-now")
-async def run_task_now(task_id: str):
+async def run_task_now(task_id: str, user_id: str = Query(default=None)):
     """Dispara execução imediata da task em background. Só funciona se status=active."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM scheduled_tasks WHERE id=?" + (" AND user_id=?" if user_id else ""),
+            (task_id, user_id) if user_id else (task_id,),
         ).fetchone()
     if not row:
         return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
@@ -522,11 +653,12 @@ async def run_task_now(task_id: str):
 
 
 @app.post("/tasks/{task_id}/toggle-pause")
-def toggle_pause_task(task_id: str):
+def toggle_pause_task(task_id: str, user_id: str = Query(default=None)):
     """Alterna entre pausado e ativo. Não afeta tasks em execução ou concluídas."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, status FROM scheduled_tasks WHERE id = ?", (task_id,)
+            "SELECT id, status FROM scheduled_tasks WHERE id=?" + (" AND user_id=?" if user_id else ""),
+            (task_id, user_id) if user_id else (task_id,),
         ).fetchone()
         if not row:
             return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
@@ -540,11 +672,12 @@ def toggle_pause_task(task_id: str):
 
 
 @app.delete("/tasks/{task_id}")
-def delete_task_endpoint(task_id: str):
+def delete_task_endpoint(task_id: str, user_id: str = Query(default=None)):
     """Remove uma tarefa do banco pelo ID."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id FROM scheduled_tasks WHERE id = ?", (task_id,)
+            "SELECT id FROM scheduled_tasks WHERE id=?" + (" AND user_id=?" if user_id else ""),
+            (task_id, user_id) if user_id else (task_id,),
         ).fetchone()
         if not row:
             return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
@@ -918,38 +1051,38 @@ def get_lines_status():
 # ── alertas ───────────────────────────────────────────────────────────────────
 
 @app.get("/alerts")
-def get_alerts(all: bool = False):
+def get_alerts(all: bool = False, user_id: str = Query(default=None)):
     """Retorna alertas de threshold. Por padrão apenas não lidos; ?all=true retorna os últimos 100."""
-    return cs.get_alerts(unread_only=not all)
+    return cs.get_alerts(unread_only=not all, user_id=user_id)
 
 
 @app.post("/alerts/{alert_id}/read")
-def mark_alert_read(alert_id: str):
+def mark_alert_read(alert_id: str, user_id: str = Query(default=None)):
     """Marca um alerta como lido."""
-    ok = cs.mark_alert_read(alert_id)
+    ok = cs.mark_alert_read(alert_id, user_id=user_id)
     if not ok:
         return JSONResponse(status_code=404, content={"error": True, "message": "Alerta não encontrado."})
     return {"ok": True}
 
 
 @app.post("/alerts/read-all")
-def mark_all_alerts_read():
+def mark_all_alerts_read(user_id: str = Query(default=None)):
     """Marca todos os alertas não lidos como lidos."""
-    count = cs.mark_all_alerts_read()
+    count = cs.mark_all_alerts_read(user_id=user_id)
     return {"ok": True, "marked": count}
 
 
 @app.delete("/alerts")
-def delete_all_alerts():
+def delete_all_alerts(user_id: str = Query(default=None)):
     """Apaga todos os alertas permanentemente."""
-    count = cs.delete_all_alerts()
+    count = cs.delete_all_alerts(user_id=user_id)
     return {"ok": True, "deleted": count}
 
 
 @app.delete("/alerts/{alert_id}")
-def delete_alert(alert_id: str):
+def delete_alert(alert_id: str, user_id: str = Query(default=None)):
     """Apaga permanentemente um alerta."""
-    ok = cs.delete_alert(alert_id)
+    ok = cs.delete_alert(alert_id, user_id=user_id)
     if not ok:
         return JSONResponse(status_code=404, content={"error": True, "message": "Alerta não encontrado."})
     return {"ok": True}
