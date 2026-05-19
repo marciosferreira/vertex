@@ -1,0 +1,14 @@
+{
+  "task_id": "001",
+  "task_name": "Monitorar Aumento de Produção Diária",
+  "run_at": "2026-05-19T00:43:55.075155",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_5m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

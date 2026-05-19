@@ -1,0 +1,1 @@
+Linha 3 - Status atual: stopped

@@ -94,9 +94,10 @@ def _date_range_for_task(task: dict) -> tuple[str, str]:
         m = re.match(r'every_(\d+)d', freq)
         if m:
             delta = int(m.group(1))
+        elif re.match(r'every_(\d+)[hm]', freq):
+            delta = 1  # horas ou minutos → janela de hoje
         else:
-            m = re.match(r'every_(\d+)h', freq)
-            delta = 1 if m else 7
+            delta = 7
 
     from_date = (today - timedelta(days=delta)).isoformat()
     to_date   = today.isoformat()

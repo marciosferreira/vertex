@@ -1,0 +1,14 @@
+{
+  "task_id": "004",
+  "task_name": "Monitorar status Linha 3",
+  "run_at": "2026-05-19T01:30:41.499288",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_5m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

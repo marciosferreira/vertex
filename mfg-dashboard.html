@@ -487,11 +487,12 @@
 <aside id="alertsPanel" style="display:none;position:fixed;top:58px;right:0;height:calc(100vh - 58px);width:380px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
   <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1e293b;flex-shrink:0;">
     <div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#ef4444;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px;">Threshold Alerts</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#ef4444;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px;">Alertas do Agente</div>
       <div style="font-size:14px;font-weight:600;color:#f8fafc;">Notificações</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <button onclick="markAllAlertsRead()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:4px 10px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;">✓ Marcar todas lidas</button>
+      <button onclick="deleteAllAlerts()" style="background:none;border:1px solid #3f1515;border-radius:6px;color:#7f1d1d;padding:4px 10px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#7f1d1d'" onmouseout="this.style.color='#7f1d1d';this.style.borderColor='#3f1515'">🗑 Apagar todas</button>
       <button onclick="closeAlertsPanel()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
     </div>
   </div>
@@ -2421,15 +2422,21 @@ function toggleAlertsPanel() {
   else { closeAlertsPanel(); }
 }
 
+let _alertsClearTimer = null;
 function openAlertsPanel() {
   document.getElementById('alertsOverlay').style.display = 'block';
   const panel = document.getElementById('alertsPanel');
   panel.style.display = 'flex';
   requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
   loadAlerts();
+  // após 3s: limpa badge e highlight das não lidas
+  _alertsClearTimer = setTimeout(() => {
+    markAllAlertsRead();
+  }, 3000);
 }
 
 function closeAlertsPanel() {
+  clearTimeout(_alertsClearTimer);
   const panel = document.getElementById('alertsPanel');
   panel.style.transform = 'translateX(100%)';
   setTimeout(() => {
@@ -2458,8 +2465,9 @@ async function loadAlerts() {
       const taskTag = a.task_id
         ? `<span style="font-size:9px;background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;">task ${a.task_id}</span>`
         : '';
-      return `<div onclick="markAlertRead('${a.id}', this)" style="padding:10px 12px;border-radius:6px;cursor:pointer;${bg}${border}transition:background .15s;" onmouseover="this.style.background='#1a2030'" onmouseout="this.style.background='${unread ? '#1a0a0a' : '#0d1117'}'">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+      return `<div id="alert-${a.id}" style="padding:10px 12px;border-radius:6px;${bg}${border}transition:background .15s;position:relative;" onmouseover="this.style.background='#1a2030'" onmouseout="this.style.background='${unread ? '#1a0a0a' : '#0d1117'}'">
+        <button onclick="deleteAlert('${a.id}')" title="Apagar" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#334155;font-size:14px;cursor:pointer;line-height:1;padding:2px 4px;border-radius:4px;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#334155'">✕</button>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding-right:20px;">
           <div style="font-size:12px;color:${unread ? '#fca5a5' : '#94a3b8'};line-height:1.4;flex:1;">${a.message}</div>
           ${taskTag}
         </div>
@@ -2489,6 +2497,24 @@ async function markAllAlertsRead() {
   updateAlertsBadge();
 }
 
+async function deleteAllAlerts() {
+  await fetch('/alerts', { method: 'DELETE' });
+  const list = document.getElementById('alertsList');
+  list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>';
+  updateAlertsBadge();
+}
+
+async function deleteAlert(alertId) {
+  await fetch(`/alerts/${alertId}`, { method: 'DELETE' });
+  const el = document.getElementById(`alert-${alertId}`);
+  if (el) el.remove();
+  const list = document.getElementById('alertsList');
+  if (!list.children.length) {
+    list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>';
+  }
+  updateAlertsBadge();
+}
+
 async function updateAlertsBadge() {
   try {
     const res = await fetch('/alerts');
@@ -2513,16 +2539,39 @@ function pollAlerts() {
 function _applyDemoState(state) {
   const boost  = document.getElementById('demoBoostBtn');
   const reduce = document.getElementById('demoReduceBtn');
-  const isBoost  = state === 'boosted';
-  const isReduce = state === 'reduced';
-  boost.disabled  = isBoost;
-  reduce.disabled = isReduce;
-  boost.style.opacity  = isBoost  ? '.35' : '1';
-  reduce.style.opacity = isReduce ? '.35' : '1';
-  boost.style.cursor   = isBoost  ? 'not-allowed' : 'pointer';
-  reduce.style.cursor  = isReduce ? 'not-allowed' : 'pointer';
-  boost.title  = isBoost  ? 'Boost já aplicado — clique em ▼ para reduzir' : 'Aumenta produção de hoje em +50%';
-  reduce.title = isReduce ? 'Redução já aplicada — clique em ▲ para aumentar' : 'Reduz produção de hoje em −50%';
+
+  if (state === 'boosted') {
+    boost.disabled  = true;
+    boost.textContent = '▲ alto';
+    boost.style.opacity = '.35'; boost.style.cursor = 'not-allowed';
+    boost.title = 'Produção já está alta — clique em ▼ para restaurar o original';
+    reduce.disabled = false;
+    reduce.textContent = '↩ restaurar';
+    reduce.style.opacity = '1'; reduce.style.cursor = 'pointer';
+    reduce.style.borderColor = '#b45309'; reduce.style.color = '#fcd34d';
+    reduce.title = 'Restaura a produção ao valor original';
+  } else if (state === 'reduced') {
+    reduce.disabled  = true;
+    reduce.textContent = '▼ baixo';
+    reduce.style.opacity = '.35'; reduce.style.cursor = 'not-allowed';
+    reduce.title = 'Produção já está baixa — clique em ▲ para restaurar o original';
+    boost.disabled = false;
+    boost.textContent = '↩ restaurar';
+    boost.style.opacity = '1'; boost.style.cursor = 'pointer';
+    boost.style.borderColor = '#b45309'; boost.style.color = '#fcd34d';
+    boost.title = 'Restaura a produção ao valor original';
+  } else {
+    boost.disabled  = false;
+    boost.textContent = '▲ +50%';
+    boost.style.opacity = '1'; boost.style.cursor = 'pointer';
+    boost.style.borderColor = '#16a34a'; boost.style.color = '#4ade80';
+    boost.title = 'Seta produção de hoje para +50% acima do normal';
+    reduce.disabled = false;
+    reduce.textContent = '▼ −50%';
+    reduce.style.opacity = '1'; reduce.style.cursor = 'pointer';
+    reduce.style.borderColor = '#dc2626'; reduce.style.color = '#f87171';
+    reduce.title = 'Seta produção de hoje para −50% abaixo do normal';
+  }
 }
 
 async function _loadDemoState() {

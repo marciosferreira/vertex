@@ -1,0 +1,14 @@
+{
+  "task_id": "005",
+  "task_name": "Monitorar Linha 3 - Parada",
+  "run_at": "2026-05-19T01:36:20.489262",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_5m",
+    "weekday": null,
+    "day": null,
+    "time": ""
+  }
+}

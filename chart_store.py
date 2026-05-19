@@ -17,9 +17,17 @@ _conn: sqlite3.Connection | None = None
 _lock = threading.Lock()
 
 
+def _decode(v):
+    """Garante que valores TEXT do SQLite sejam sempre str, nunca bytes."""
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    return v
+
+
 def init_chart_store(db_path: Path) -> None:
     global _conn
     _conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    _conn.text_factory = lambda b: b.decode("utf-8", errors="replace")
     _conn.execute("""
         CREATE TABLE IF NOT EXISTS charts (
             chart_id   TEXT PRIMARY KEY,
@@ -165,11 +173,11 @@ def list_artifacts() -> list[dict]:
 
     result = []
     for row in charts:
-        result.append({"type": "chart", "id": row[0], "session_id": row[1], "created_at": row[2]})
+        result.append({"type": "chart", "id": _decode(row[0]), "session_id": _decode(row[1]), "created_at": _decode(row[2])})
     for row in pdfs:
-        result.append({"type": "pdf", "id": row[0], "session_id": row[1], "filename": row[2], "created_at": row[3]})
+        result.append({"type": "pdf", "id": _decode(row[0]), "session_id": _decode(row[1]), "filename": _decode(row[2]), "created_at": _decode(row[3])})
     for row in excels:
-        result.append({"type": "excel", "id": row[0], "session_id": row[1], "filename": row[2], "created_at": row[3]})
+        result.append({"type": "excel", "id": _decode(row[0]), "session_id": _decode(row[1]), "filename": _decode(row[2]), "created_at": _decode(row[3])})
 
     result.sort(key=lambda x: x["created_at"], reverse=True)
     return result
@@ -213,10 +221,13 @@ def save_alert(session_id: str, message: str, value: float | None = None, thresh
     m = re.match(r'^daemon_(\w+)_', session_id)
     task_id = m.group(1) if m else None
     alert_id = str(uuid.uuid4())
+    # Cast to native Python float — numpy/pandas numeric types serialize as BLOB
+    safe_value     = float(value)     if value     is not None else None
+    safe_threshold = float(threshold) if threshold is not None else None
     with _lock:
         _conn.execute(
             "INSERT INTO threshold_alerts (id, task_id, message, value, threshold, created_at, read) VALUES (?, ?, ?, ?, ?, ?, 0)",
-            (alert_id, task_id, message, value, threshold, _now()),
+            (alert_id, task_id, message, safe_value, safe_threshold, _now()),
         )
         _conn.commit()
     return alert_id
@@ -234,7 +245,20 @@ def get_alerts(unread_only: bool = True) -> list[dict]:
             rows = _conn.execute(
                 "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
-    return [dict(r) for r in rows]
+    def _real(v):
+        if isinstance(v, bytes):
+            import struct
+            try:
+                return float(struct.unpack('<q', v)[0])
+            except Exception:
+                return None
+        return v
+
+    return [
+        {"id": _decode(r[0]), "task_id": _decode(r[1]), "message": _decode(r[2]),
+         "value": _real(r[3]), "threshold": _real(r[4]), "created_at": _decode(r[5]), "read": r[6]}
+        for r in rows
+    ]
 
 
 def mark_alert_read(alert_id: str) -> bool:
@@ -253,6 +277,24 @@ def mark_all_alerts_read() -> int:
         cur = _conn.execute("UPDATE threshold_alerts SET read=1 WHERE read=0")
         _conn.commit()
     return cur.rowcount
+
+
+def delete_all_alerts() -> int:
+    if _conn is None:
+        return 0
+    with _lock:
+        cur = _conn.execute("DELETE FROM threshold_alerts")
+        _conn.commit()
+    return cur.rowcount
+
+
+def delete_alert(alert_id: str) -> bool:
+    if _conn is None:
+        return False
+    with _lock:
+        cur = _conn.execute("DELETE FROM threshold_alerts WHERE id = ?", (alert_id,))
+        _conn.commit()
+    return cur.rowcount > 0
 
 
 def get_chart_b64(chart_id: str) -> str | None:

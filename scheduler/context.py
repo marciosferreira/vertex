@@ -139,21 +139,30 @@ class TaskContext:
         self._tokens.append(token)
         return token
 
-    # ── Alertas de threshold ──────────────────────────────────────────────────
+    # ── Notificações ─────────────────────────────────────────────────────────
 
-    def notify_alert(self, message: str, value: float | None = None, threshold: float | None = None) -> None:
-        """Registra um alerta de threshold visível como notificação no header do dashboard.
+    def notify(self, message: str, value: float | None = None, threshold: float | None = None) -> None:
+        """Dispara uma notificação visível no sino (🔔) do dashboard.
 
-        Chame quando um valor calculado cruzar o threshold definido pelo usuário.
-        Cada chamada gera uma nova notificação independente.
+        Use para qualquer condição que mereça atenção do usuário:
+        - Status de equipamento ('Linha 1 está Inoperante')
+        - Threshold numérico ('OEE em 71% — abaixo de 80%')
+        - Contagem ('3 ordens atrasadas')
+        - Qualquer regra de negócio personalizada
+
+        Cada chamada gera uma notificação independente.
 
         Args:
-            message: Descrição do alerta (ex: 'OEE em 72.3% — abaixo do threshold de 80%').
-            value: Valor observado (opcional, para exibição no painel).
-            threshold: Threshold configurado (opcional, para exibição no painel).
+            message: Texto da notificação (ex: 'Linha 2 — status: Inoperante').
+            value: Valor numérico observado (opcional, exibido no painel).
+            threshold: Valor de referência (opcional, exibido no painel).
         """
         import chart_store
         chart_store.save_alert(self.session_id, message, value, threshold)
+
+    def notify_alert(self, message: str, value: float | None = None, threshold: float | None = None) -> None:
+        """Alias de notify() — mantido para compatibilidade com task_codes existentes."""
+        self.notify(message, value, threshold)
 
     # ── Resultado ─────────────────────────────────────────────────────────────
 

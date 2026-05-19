@@ -393,13 +393,16 @@ def demo_state():
 
 @app.post("/demo/boost")
 def demo_boost():
-    """Seta produção de hoje para +50% do baseline. Desabilitado se já boosted."""
+    """Normal→Alto (+50%). Baixo→Normal (restaura). Bloqueado se já Alto."""
     today = date.today().isoformat()
     with get_db() as conn:
         _demo_ensure_baseline(conn, today)
-        if _demo_compute_state(conn, today) == "boosted":
-            return JSONResponse(status_code=409, content={"error": True, "message": "Boost já aplicado."})
-        _demo_apply_factor(conn, today, 1.5)
+        state = _demo_compute_state(conn, today)
+        if state == "boosted":
+            return JSONResponse(status_code=409, content={"error": True, "message": "Já está no estado alto."})
+        # reduced → restaura ao original; normal → sobe para +50%
+        factor = 1.0 if state == "reduced" else 1.5
+        _demo_apply_factor(conn, today, factor)
         conn.commit()
         state = _demo_compute_state(conn, today)
     return {"ok": True, "state": state}
@@ -407,13 +410,16 @@ def demo_boost():
 
 @app.post("/demo/reduce")
 def demo_reduce():
-    """Seta produção de hoje para −50% do baseline. Desabilitado se já reduced."""
+    """Normal→Baixo (−50%). Alto→Normal (restaura). Bloqueado se já Baixo."""
     today = date.today().isoformat()
     with get_db() as conn:
         _demo_ensure_baseline(conn, today)
-        if _demo_compute_state(conn, today) == "reduced":
-            return JSONResponse(status_code=409, content={"error": True, "message": "Redução já aplicada."})
-        _demo_apply_factor(conn, today, 0.5)
+        state = _demo_compute_state(conn, today)
+        if state == "reduced":
+            return JSONResponse(status_code=409, content={"error": True, "message": "Já está no estado baixo."})
+        # boosted → restaura ao original; normal → desce para −50%
+        factor = 1.0 if state == "boosted" else 0.5
+        _demo_apply_factor(conn, today, factor)
         conn.commit()
         state = _demo_compute_state(conn, today)
     return {"ok": True, "state": state}
@@ -893,6 +899,22 @@ def mark_all_alerts_read():
     """Marca todos os alertas não lidos como lidos."""
     count = cs.mark_all_alerts_read()
     return {"ok": True, "marked": count}
+
+
+@app.delete("/alerts")
+def delete_all_alerts():
+    """Apaga todos os alertas permanentemente."""
+    count = cs.delete_all_alerts()
+    return {"ok": True, "deleted": count}
+
+
+@app.delete("/alerts/{alert_id}")
+def delete_alert(alert_id: str):
+    """Apaga permanentemente um alerta."""
+    ok = cs.delete_alert(alert_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Alerta não encontrado."})
+    return {"ok": True}
 
 
 # ── kpis (snapshot por turno) ─────────────────────────────────────────────────

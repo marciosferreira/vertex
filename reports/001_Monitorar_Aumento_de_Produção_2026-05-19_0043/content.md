@@ -1,0 +1,1 @@
+Produção hoje: 2793 (ontem: 4512). Aumento de -38.10%, abaixo do limite de 10%.
