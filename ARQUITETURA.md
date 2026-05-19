@@ -2,19 +2,19 @@
 
 ---
 
-## Um analista de dados sempre disponível
+## Visão geral
 
-Imagine ter um analista de dados ou cientista de dados disponível a qualquer momento, capaz de acessar os dados reais da operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos.
+Nesta arquitetura, o agente atua como uma camada de inteligência sobre os dados operacionais da fábrica. A partir de uma instrução em linguagem natural — digitada ou dita pelo usuário — o sistema consulta APIs e banco de dados em tempo real, processa os dados em ambiente Python isolado e entrega a análise na forma de texto, gráficos, planilhas Excel ou relatórios PDF.
 
-É exatamente isso que esta arquitetura entrega. O gestor digita em linguagem natural — *"qual linha teve mais paradas esta semana e qual o impacto no OEE?"* — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela, planilha Excel ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+O objetivo é eliminar a dependência de intermediários para consultas analíticas rotineiras: o operador ou gestor formula a pergunta diretamente ao sistema e recebe uma resposta fundamentada em dados reais, sem dado inventado e sem espera por um analista disponível.
 
-O que está documentado aqui é como isso foi construído para funcionar de forma robusta em ambiente industrial.
+Este documento descreve como cada componente foi construído e por que as decisões de projeto foram tomadas dessa forma.
 
 ---
 
 ## A Arquitetura em uma frase
 
-> Um **orquestrador** que interpreta o pedido em linguagem natural delega para um **sub-agente especialista** que consulta **APIs e banco de dados em tempo real**, analisa os dados em sandbox Python e entrega gráficos, tabelas, planilhas Excel ou PDFs — tudo transmitido ao vivo via **streaming SSE**, habilitando decisões rápidas e baseadas em informação.
+> Um **orquestrador** que interpreta pedidos em linguagem natural — digitados ou ditos pelo usuário — delega para um **sub-agente especialista** que consulta **APIs e banco de dados em tempo real**, analisa os dados em sandbox Python e entrega gráficos, tabelas, planilhas Excel ou PDFs — tudo transmitido ao vivo via **streaming SSE**. Em paralelo, um **daemon de agendamento** executa monitores periódicos e dispara **alertas de threshold** visíveis no dashboard e **relatórios automáticos por e-mail**.
 
 ---
 
@@ -23,12 +23,13 @@ O que está documentado aqui é como isso foi construído para funcionar de form
 A espinha dorsal é um grafo de estados (StateGraph) em dois níveis:
 
 ```text
-Usuário
+Usuário (voz ou texto)
   └── Orquestrador (LangGraph)
         ├── get_current_datetime()   → responde diretamente
         ├── analisar_grafico()       → dispara o sub-agente
         ├── gerar_excel()            → exporta DataFrame como planilha .xlsx
-        └── gerar_pdf()              → empacota análise em PDF
+        ├── gerar_pdf()              → empacota análise em PDF
+        └── schedule_task()          → agenda tarefa no daemon
 
               Sub-agente Analista (sub-grafo separado)
                 ├── read_skill()         → lê instruções da skill
@@ -36,6 +37,11 @@ Usuário
                 ├── chamar_api()         → busca dados via REST
                 ├── executar_sql()       → queries ad-hoc no banco
                 └── analisar_dataframe() → executa código Python/Pandas
+
+Daemon de agendamento (thread separada)
+  └── Executa task_code gerado pelo agente
+        ├── ctx.notify()             → salva alerta de threshold no banco
+        └── metadata.json            → registra relatório pronto para envio por e-mail
 ```
 
 O orquestrador **não sabe analisar dados** — ele só sabe a quem perguntar. O sub-agente **não tem acesso ao histórico de conversa** — ele só recebe o pedido pontual delegado. Essa separação de responsabilidades é deliberada: cada camada faz uma coisa e faz bem.
@@ -107,6 +113,55 @@ O frontend não espera a resposta final. Cada etapa do processo chega em tempo r
 ```
 
 O desafio aqui é que o sub-agente roda dentro de um `@tool` do orquestrador — fora do stream principal do LangGraph. A solução é um **side-channel por sessão**: uma `queue.Queue` por `session_id` captura os eventos do sub-agente em tempo real e os entrega ao gerador SSE que está servindo o frontend.
+
+---
+
+## Comando de voz — gravar, revisar e enviar
+
+O usuário pode interagir com o agente por voz diretamente no chat. O fluxo tem três etapas explícitas antes de qualquer processamento:
+
+```text
+[🎤 gravar]  →  MediaRecorder (webm/opus, browser)
+     ↓
+[player de áudio]  →  usuário ouve, descarta ou envia
+     ↓ envia
+POST /chat/transcribe
+     ↓
+Gemini (Vertex AI) — transcrição literal, sem interpretação
+     ↓
+transcript aparece como mensagem do usuário no chat
+     ↓
+GET /chat/stream?message=transcript  →  agente processa normalmente
+```
+
+O usuário sempre vê e pode editar o transcript antes de ele chegar ao agente — não há submissão silenciosa. A transcrição usa o mesmo modelo Gemini já configurado no projeto, sem dependência de um serviço de speech externo.
+
+---
+
+## Alertas de threshold — monitoramento contínuo
+
+O usuário pode pedir ao agente para monitorar qualquer condição de negócio: *"me avise se o OEE cair abaixo de 80%"* ou *"alerte quando a linha 2 ficar inoperante"*. O agente gera um `task_code` Python que o daemon executa periodicamente. Quando a condição é satisfeita, o código chama `ctx.notify()`:
+
+```python
+if oee < 80:
+    ctx.notify(f"OEE {oee:.1f}% — abaixo de 80%", value=oee, threshold=80)
+```
+
+O alerta é salvo no banco com valor observado e valor de referência. O dashboard exibe os alertas ativos no sino 🔔 do header em tempo real, sem necessidade de recarregar a página.
+
+---
+
+## Relatórios agendados por e-mail
+
+Tarefas recorrentes (diárias, semanais, mensais) são criadas via chat: *"todo dia às 7h gere o relatório de produção e envie para gerencia at empresa.com"*. O agente chama `schedule_task()`, que persiste a tarefa no banco com frequência, horário e e-mail de destino.
+
+Quando o daemon executa a tarefa no horário programado:
+
+1. Invoca o agente com o `task_code` gerado
+2. Coleta os artefatos produzidos (PDFs, gráficos)
+3. Salva um `metadata.json` com status `pending_send` e os detalhes do e-mail (destinatário, assunto, links dos anexos)
+
+O relatório fica disponível localmente e o metadado estruturado permite integração com qualquer serviço de envio de e-mail externo sem acoplar o daemon a um servidor SMTP específico.
 
 ---
 

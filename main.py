@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -315,6 +315,44 @@ async def chat_stream(request: Request, message: str, session_id: str = "default
             yield {"data": json.dumps(event)}
 
     return EventSourceResponse(generate())
+
+
+@app.post("/chat/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    """Recebe áudio (webm/opus), transcreve via Gemini (Vertex AI) e retorna texto."""
+    if not is_multi_agent_ready():
+        return JSONResponse(status_code=503, content={"error": "Agente IA não configurado"})
+
+    try:
+        import vertexai
+        from vertexai.generative_models import GenerativeModel, Part
+    except ImportError:
+        return JSONResponse(status_code=500, content={"error": "vertexai SDK não disponível"})
+
+    project    = os.getenv("PROJECT_ID", "")
+    location   = os.getenv("LOCATION", "us-central1")
+    model_name = os.getenv("MODEL_NAME", "gemini-2.0-flash-001")
+
+    audio_bytes = await audio.read()
+    mime_type   = audio.content_type or "audio/webm"
+
+    try:
+        vertexai.init(project=project, location=location)
+        model      = GenerativeModel(model_name)
+        audio_part = Part.from_data(audio_bytes, mime_type=mime_type)
+        response   = await asyncio.to_thread(
+            model.generate_content,
+            [audio_part, "Transcreva literalmente o áudio. Regras: (1) copie palavra por palavra o que foi dito, sem corrigir, resumir, interpretar ou adicionar nada; (2) retorne apenas o texto transcrito, sem introduções, aspas ou comentários; (3) se não houver fala, retorne uma string vazia."],
+        )
+        transcript = response.text.strip()
+    except Exception as e:
+        logger.error("Transcrição via Gemini falhou: %s", e)
+        return JSONResponse(status_code=502, content={"error": f"Falha na transcrição: {e}"})
+
+    if not transcript:
+        return JSONResponse(status_code=422, content={"error": "Não foi possível transcrever o áudio"})
+
+    return {"transcript": transcript}
 
 
 # ── raiz ──────────────────────────────────────────────────────────────────────

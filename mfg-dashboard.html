@@ -312,6 +312,36 @@
   }
   .chat-send:hover { background:#7dd3fc; box-shadow:0 4px 16px rgba(56,189,248,.45); }
   .chat-send:disabled { opacity:.3; cursor:not-allowed; box-shadow:none; }
+  .chat-mic {
+    width:36px; height:36px; flex-shrink:0; background:#1e293b;
+    border:1px solid rgba(56,189,248,.25); color:var(--cyan); font-size:15px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all .2s; border-radius:10px;
+  }
+  .chat-mic:hover { background:rgba(56,189,248,.1); border-color:rgba(56,189,248,.5); }
+  .chat-mic:disabled { opacity:.3; cursor:not-allowed; }
+  .chat-mic.recording {
+    background:rgba(239,68,68,.15); border-color:#ef4444; color:#ef4444;
+    animation:mic-pulse 1s ease-in-out infinite;
+  }
+  @keyframes mic-pulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,.4); }
+    50%      { box-shadow:0 0 0 6px rgba(239,68,68,0); }
+  }
+  .audio-review {
+    flex:1; display:none; align-items:center; gap:8px;
+    background:#141c27; border:1px solid rgba(56,189,248,.25);
+    border-radius:10px; padding:6px 10px;
+  }
+  .audio-review.visible { display:flex; }
+  .audio-review audio { flex:1; width:0; height:28px; min-width:0; accent-color:var(--cyan); }
+  .audio-discard {
+    width:28px; height:28px; flex-shrink:0; background:rgba(239,68,68,.1);
+    border:1px solid rgba(239,68,68,.3); color:#f87171; font-size:12px;
+    cursor:pointer; border-radius:7px; display:flex; align-items:center;
+    justify-content:center; transition:all .15s;
+  }
+  .audio-discard:hover { background:rgba(239,68,68,.25); }
 
   .typing-dot {
     display:inline-block; width:6px; height:6px; border-radius:50%;
@@ -904,7 +934,12 @@
     <textarea class="chat-input" id="chatInput" rows="1"
       placeholder="Ex: qual turno tem mais defeitos?"
       onkeydown="chatKeydown(event)"></textarea>
-    <button class="chat-send" id="chatSendBtn" onclick="sendChat()">↑</button>
+    <div class="audio-review" id="audioReview">
+      <audio id="audioPlayer" controls></audio>
+      <button class="audio-discard" id="audioDiscardBtn" onclick="discardAudio()" title="Descartar gravação">✕</button>
+    </div>
+    <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
+    <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
   </div>
 </aside>
 
@@ -1525,6 +1560,96 @@ function chatKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
 }
 
+// ── Voice Recording ───────────────────────────────────
+(function() {
+  let _recorder = null;
+  let _chunks   = [];
+  let _blob     = null;
+
+  window.toggleRecording = async function() {
+    const micBtn = document.getElementById('chatMicBtn');
+
+    if (_recorder && _recorder.state === 'recording') {
+      _recorder.stop();
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      _addMsg('error', 'Microfone não disponível: ' + e.message);
+      return;
+    }
+
+    _chunks = [];
+    _recorder = new MediaRecorder(stream);
+
+    _recorder.ondataavailable = e => { if (e.data.size > 0) _chunks.push(e.data); };
+
+    _recorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      _blob = new Blob(_chunks, { type: _recorder.mimeType || 'audio/webm' });
+      const url = URL.createObjectURL(_blob);
+      document.getElementById('audioPlayer').src = url;
+      document.getElementById('chatInput').style.display = 'none';
+      document.getElementById('audioReview').classList.add('visible');
+      micBtn.classList.remove('recording');
+      micBtn.style.display = 'none';
+    };
+
+    _recorder.start();
+    micBtn.classList.add('recording');
+    micBtn.title = 'Parar gravação';
+  };
+
+  window.discardAudio = function() {
+    _blob   = null;
+    _chunks = [];
+    const player = document.getElementById('audioPlayer');
+    URL.revokeObjectURL(player.src);
+    player.src = '';
+    document.getElementById('audioReview').classList.remove('visible');
+    document.getElementById('chatInput').style.display = '';
+    document.getElementById('chatMicBtn').style.display = '';
+  };
+
+  window.handleSend = function() {
+    if (_blob) { _sendAudio(); } else { sendChat(); }
+  };
+
+  async function _sendAudio() {
+    const sendBtn = document.getElementById('chatSendBtn');
+    const micBtn  = document.getElementById('chatMicBtn');
+    sendBtn.disabled = true;
+    micBtn.disabled  = true;
+
+    const form = new FormData();
+    form.append('audio', _blob, 'recording.webm');
+
+    let transcript;
+    try {
+      const res  = await fetch(`${API_BASE}/chat/transcribe`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha na transcrição');
+      transcript = data.transcript;
+    } catch (e) {
+      _addMsg('error', 'Falha ao transcrever: ' + e.message);
+      sendBtn.disabled = false;
+      micBtn.disabled  = false;
+      return;
+    }
+
+    discardAudio();
+    sendBtn.disabled = false;
+    micBtn.disabled  = false;
+
+    const input = document.getElementById('chatInput');
+    input.value = transcript;
+    sendChat();
+  }
+})();
+
 document.getElementById('chatInput').addEventListener('input', function() {
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 120) + 'px';
@@ -1649,25 +1774,26 @@ initDashboard();
             <div class="flex flex-col lg:flex-row gap-10 items-center">
                 <!-- Texto -->
                 <div class="flex-1 min-w-0">
-                    <span class="text-indigo-400 font-mono text-sm uppercase tracking-widest font-semibold block mb-2">Analista sempre disponível · Operação autônoma 24/7</span>
+                    <span class="text-indigo-400 font-mono text-sm uppercase tracking-widest font-semibold block mb-2">Arquitetura Agêntica · Operação autônoma 24/7</span>
                     <h1 class="text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-4">Arquitetura Agêntica Industrial</h1>
                     <p class="text-slate-300 leading-relaxed text-base md:text-lg mb-4">
-                        Imagine ter um <strong class="text-white">analista de dados ou cientista de dados</strong> disponível a qualquer momento, capaz de acessar os dados reais da sua operação, criar gráficos, tabelas e análises customizadas na hora — e entregar uma resposta fundamentada em segundos. E quando você não está olhando, o sistema <strong class="text-white">continua trabalhando por conta própria</strong>.
+                        Nesta arquitetura, o agente atua como uma <strong class="text-white">camada de inteligência sobre os dados operacionais</strong>. A partir de uma instrução em linguagem natural — digitada ou dita pelo usuário — o sistema consulta APIs e banco de dados em tempo real, processa os dados em ambiente Python isolado e entrega a análise na forma de texto, gráficos, planilhas Excel ou relatórios PDF.
                     </p>
                     <p class="text-slate-400 leading-relaxed text-sm md:text-base mb-3">
-                        O gestor digita em linguagem natural — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana?"</span> — e o agente consulta APIs e banco de dados em tempo real, processa os dados e devolve a análise com gráfico, tabela ou relatório PDF. Sem espera, sem intermediário, sem dado inventado.
+                        O objetivo é eliminar a dependência de intermediários para consultas analíticas rotineiras: o operador ou gestor formula a pergunta diretamente ao sistema — <span class="text-indigo-300 font-medium">"qual linha teve mais paradas esta semana?"</span> — e recebe uma resposta fundamentada em dados reais, sem dado inventado e sem espera.
                     </p>
                     <p class="text-slate-400 leading-relaxed text-sm md:text-base">
-                        Além da resposta imediata, o gestor pode <strong class="text-white">agendar qualquer ação recorrente</strong> via chat — em linguagem natural, da mesma forma. O agente escreve e valida o código Python de execução, que passa a rodar automaticamente no horário definido: enviando alertas, gerando relatórios, acionando sistemas externos ou tomando medidas em máquinas conectadas — <strong class="text-white">tudo sem intervenção humana</strong>.
+                        Em paralelo, um <strong class="text-white">daemon de agendamento</strong> executa monitores periódicos definidos pelo próprio agente: dispara <strong class="text-white">alertas de threshold</strong> visíveis no dashboard quando uma condição operacional é cruzada, e gera <strong class="text-white">relatórios automáticos por e-mail</strong> nos horários configurados — tudo sem intervenção humana.
                     </p>
                     <div class="mt-6 flex flex-wrap gap-3 text-xs font-mono">
                         <span class="px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">📊 Gráficos customizados</span>
                         <span class="px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300">📋 Tabelas e spreadsheets</span>
                         <span class="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">📥 Relatórios PDF</span>
                         <span class="px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">⚡ Dados em tempo real</span>
-                        <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300">💬 Linguagem natural</span>
+                        <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300">💬 Texto ou voz</span>
                         <span class="px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30 text-green-300">🕐 Agendamento autônomo</span>
-                        <span class="px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300">🏭 Ações em máquinas</span>
+                        <span class="px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300">🔔 Alertas de threshold</span>
+                        <span class="px-3 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-300">📧 Relatórios por e-mail</span>
                     </div>
                 </div>
                 <!-- Ícone decorativo -->
