@@ -139,6 +139,22 @@ class TaskContext:
         self._tokens.append(token)
         return token
 
+    # ── Alertas de threshold ──────────────────────────────────────────────────
+
+    def notify_alert(self, message: str, value: float | None = None, threshold: float | None = None) -> None:
+        """Registra um alerta de threshold visível como notificação no header do dashboard.
+
+        Chame quando um valor calculado cruzar o threshold definido pelo usuário.
+        Cada chamada gera uma nova notificação independente.
+
+        Args:
+            message: Descrição do alerta (ex: 'OEE em 72.3% — abaixo do threshold de 80%').
+            value: Valor observado (opcional, para exibição no painel).
+            threshold: Threshold configurado (opcional, para exibição no painel).
+        """
+        import chart_store
+        chart_store.save_alert(self.session_id, message, value, threshold)
+
     # ── Resultado ─────────────────────────────────────────────────────────────
 
     def tokens(self) -> list[str]:

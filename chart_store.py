@@ -46,6 +46,17 @@ def init_chart_store(db_path: Path) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    _conn.execute("""
+        CREATE TABLE IF NOT EXISTS threshold_alerts (
+            id         TEXT PRIMARY KEY,
+            task_id    TEXT,
+            message    TEXT NOT NULL,
+            value      REAL,
+            threshold  REAL,
+            created_at TEXT NOT NULL,
+            read       INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     _conn.commit()
 
 
@@ -193,6 +204,55 @@ def delete_artifact(artifact_type: str, artifact_id: str) -> bool:
         cur = _conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (artifact_id,))
         _conn.commit()
     return cur.rowcount > 0
+
+
+def save_alert(session_id: str, message: str, value: float | None = None, threshold: float | None = None) -> str:
+    if _conn is None:
+        raise RuntimeError("chart_store não inicializado.")
+    import re
+    m = re.match(r'^daemon_(\w+)_', session_id)
+    task_id = m.group(1) if m else None
+    alert_id = str(uuid.uuid4())
+    with _lock:
+        _conn.execute(
+            "INSERT INTO threshold_alerts (id, task_id, message, value, threshold, created_at, read) VALUES (?, ?, ?, ?, ?, ?, 0)",
+            (alert_id, task_id, message, value, threshold, _now()),
+        )
+        _conn.commit()
+    return alert_id
+
+
+def get_alerts(unread_only: bool = True) -> list[dict]:
+    if _conn is None:
+        return []
+    with _lock:
+        if unread_only:
+            rows = _conn.execute(
+                "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts WHERE read=0 ORDER BY created_at DESC"
+            ).fetchall()
+        else:
+            rows = _conn.execute(
+                "SELECT id, task_id, message, value, threshold, created_at, read FROM threshold_alerts ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_alert_read(alert_id: str) -> bool:
+    if _conn is None:
+        return False
+    with _lock:
+        cur = _conn.execute("UPDATE threshold_alerts SET read=1 WHERE id=?", (alert_id,))
+        _conn.commit()
+    return cur.rowcount > 0
+
+
+def mark_all_alerts_read() -> int:
+    if _conn is None:
+        return 0
+    with _lock:
+        cur = _conn.execute("UPDATE threshold_alerts SET read=1 WHERE read=0")
+        _conn.commit()
+    return cur.rowcount
 
 
 def get_chart_b64(chart_id: str) -> str | None:

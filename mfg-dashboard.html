@@ -456,6 +456,11 @@
     <div class="api-status" id="apiStatus">API —</div>
     <div class="live"><div class="dot" id="liveDot"></div><span id="liveLabel">CONECTANDO</span></div>
     <div class="clk" id="clk">--:--:--</div>
+    <span style="display:flex;align-items:center;gap:6px;padding:3px 8px;border:1px dashed rgba(251,191,36,.4);border-radius:4px;background:rgba(251,191,36,.04);">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#f59e0b;letter-spacing:.12em;">TEST PURPOSE</span>
+      <button id="demoBoostBtn" onclick="demoBoost()" title="[TEST] Simula aumento de produção: seta hoje para +50% dos valores originais" style="background:none;border:1px solid #16a34a;color:#4ade80;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;cursor:pointer;border-radius:3px;letter-spacing:.04em;transition:opacity .15s;">▲ prod +50%</button>
+      <button id="demoReduceBtn" onclick="demoReduce()" title="[TEST] Simula queda de produção: seta hoje para −50% dos valores originais" style="background:none;border:1px solid #dc2626;color:#f87171;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;cursor:pointer;border-radius:3px;letter-spacing:.04em;transition:opacity .15s;">▼ prod −50%</button>
+    </span>
     <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
       <span class="refresh-icon">↺</span> Atualizar
     </button>
@@ -468,9 +473,32 @@
       🗂
       Artifacts
     </button>
+    <button class="refresh-btn" id="alertsBtn" onclick="toggleAlertsPanel()" style="position:relative;gap:6px;">
+      🔔
+      <span id="alertsBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;letter-spacing:.04em;min-width:16px;text-align:center;"></span>
+      Alertas
+    </button>
     <span class="last-update" id="lastUpdate"></span>
   </div>
 </header>
+
+<!-- ── Painel de Alertas ───────────────────────────────────────────────────── -->
+<div id="alertsOverlay" onclick="closeAlertsPanel()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;backdrop-filter:blur(2px);"></div>
+<aside id="alertsPanel" style="display:none;position:fixed;top:58px;right:0;height:calc(100vh - 58px);width:380px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#ef4444;letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px;">Threshold Alerts</div>
+      <div style="font-size:14px;font-weight:600;color:#f8fafc;">Notificações</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button onclick="markAllAlertsRead()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:4px 10px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;">✓ Marcar todas lidas</button>
+      <button onclick="closeAlertsPanel()" style="background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+  <div id="alertsList" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
+    <div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>
+  </div>
+</aside>
 
 <!-- ── Slide-over: Agenda de Relatórios ─────────────────────────────────── -->
 <div id="agendaOverlay" onclick="closeAgenda()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
@@ -2093,6 +2121,14 @@ function renderTaskCard(t) {
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
         ${statusBadge(t.status)}${retryInfo}
+        ${t.status === 'active' ? `
+        <button onclick="runTaskNow('${t.id}', this)"
+          title="Executar agora (sem aguardar o horário agendado)"
+          style="background:none;border:1px solid #166534;border-radius:6px;color:#4ade80;padding:3px 7px;font-size:12px;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.borderColor='#4ade80';this.style.background='rgba(74,222,128,.08)'"
+          onmouseout="this.style.borderColor='#166534';this.style.background='none'">
+          ▶
+        </button>` : ''}
         ${(t.status === 'active' || t.status === 'paused') ? `
         <button onclick="togglePauseTask('${t.id}', this)"
           title="${t.status === 'paused' ? 'Retomar tarefa' : 'Pausar tarefa'}"
@@ -2144,6 +2180,22 @@ async function loadAgenda() {
   } catch(e) {
     list.innerHTML = '<div style="text-align:center;color:#f87171;padding:40px 0;font-size:13px;">Erro ao carregar tarefas.</div>';
   }
+}
+
+async function runTaskNow(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  btn.style.color = '#94a3b8';
+  try {
+    const res = await fetch(`/tasks/${id}/run-now`, { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) { alert(d.message); }
+    else {
+      btn.textContent = '✓';
+      btn.style.borderColor = '#4ade80';
+      setTimeout(() => { btn.textContent = '▶'; btn.style.color = '#4ade80'; btn.style.borderColor = '#166534'; btn.disabled = false; loadAgenda(); }, 2000);
+    }
+  } catch (e) { btn.textContent = '▶'; btn.disabled = false; }
 }
 
 async function deleteTask(id) {
@@ -2358,7 +2410,156 @@ document.addEventListener('DOMContentLoaded', () => {
     const badge = document.getElementById('agendaBadge');
     if (n > 0) { badge.textContent = n; badge.style.display = 'inline'; }
   }).catch(() => {});
+  pollAlerts();
 });
+
+// ── Alerts panel ─────────────────────────────────────────────────────────────
+
+function toggleAlertsPanel() {
+  const panel = document.getElementById('alertsPanel');
+  if (panel.style.display === 'none' || !panel.style.display) { openAlertsPanel(); }
+  else { closeAlertsPanel(); }
+}
+
+function openAlertsPanel() {
+  document.getElementById('alertsOverlay').style.display = 'block';
+  const panel = document.getElementById('alertsPanel');
+  panel.style.display = 'flex';
+  requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
+  loadAlerts();
+}
+
+function closeAlertsPanel() {
+  const panel = document.getElementById('alertsPanel');
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(() => {
+    document.getElementById('alertsOverlay').style.display = 'none';
+    panel.style.display = 'none';
+  }, 260);
+}
+
+async function loadAlerts() {
+  const list = document.getElementById('alertsList');
+  try {
+    const res = await fetch('/alerts?all=true');
+    const alerts = await res.json();
+    if (!alerts.length) {
+      list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum alerta.</div>';
+      return;
+    }
+    list.innerHTML = alerts.map(a => {
+      const ts = new Date(a.created_at).toLocaleString('pt-BR');
+      const unread = !a.read;
+      const border = unread ? 'border-left:3px solid #ef4444;' : 'border-left:3px solid #1e293b;';
+      const bg = unread ? 'background:#1a0a0a;' : 'background:#0d1117;';
+      const valueInfo = (a.value != null && a.threshold != null)
+        ? `<div style="font-size:10px;color:#64748b;margin-top:4px;font-family:'JetBrains Mono',monospace;">valor: ${Number(a.value).toFixed(2)} · threshold: ${Number(a.threshold).toFixed(2)}</div>`
+        : '';
+      const taskTag = a.task_id
+        ? `<span style="font-size:9px;background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;">task ${a.task_id}</span>`
+        : '';
+      return `<div onclick="markAlertRead('${a.id}', this)" style="padding:10px 12px;border-radius:6px;cursor:pointer;${bg}${border}transition:background .15s;" onmouseover="this.style.background='#1a2030'" onmouseout="this.style.background='${unread ? '#1a0a0a' : '#0d1117'}'">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div style="font-size:12px;color:${unread ? '#fca5a5' : '#94a3b8'};line-height:1.4;flex:1;">${a.message}</div>
+          ${taskTag}
+        </div>
+        ${valueInfo}
+        <div style="font-size:10px;color:#334155;margin-top:6px;">${ts}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="text-align:center;color:#ef4444;padding:40px 0;font-size:13px;">Erro ao carregar alertas.</div>';
+  }
+}
+
+async function markAlertRead(alertId, el) {
+  await fetch(`/alerts/${alertId}/read`, { method: 'POST' });
+  el.style.borderLeftColor = '#1e293b';
+  el.style.background = '#0d1117';
+  el.querySelector('div > div:first-child').style.color = '#94a3b8';
+  el.onmouseover = () => el.style.background = '#1a2030';
+  el.onmouseout  = () => el.style.background = '#0d1117';
+  el.onclick = null;
+  updateAlertsBadge();
+}
+
+async function markAllAlertsRead() {
+  await fetch('/alerts/read-all', { method: 'POST' });
+  loadAlerts();
+  updateAlertsBadge();
+}
+
+async function updateAlertsBadge() {
+  try {
+    const res = await fetch('/alerts');
+    const unread = await res.json();
+    const badge = document.getElementById('alertsBadge');
+    if (unread.length > 0) {
+      badge.textContent = unread.length > 99 ? '99+' : unread.length;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (e) {}
+}
+
+function pollAlerts() {
+  updateAlertsBadge();
+  setInterval(updateAlertsBadge, 15000);
+}
+
+// ── Demo controls ─────────────────────────────────────────────────────────────
+
+function _applyDemoState(state) {
+  const boost  = document.getElementById('demoBoostBtn');
+  const reduce = document.getElementById('demoReduceBtn');
+  const isBoost  = state === 'boosted';
+  const isReduce = state === 'reduced';
+  boost.disabled  = isBoost;
+  reduce.disabled = isReduce;
+  boost.style.opacity  = isBoost  ? '.35' : '1';
+  reduce.style.opacity = isReduce ? '.35' : '1';
+  boost.style.cursor   = isBoost  ? 'not-allowed' : 'pointer';
+  reduce.style.cursor  = isReduce ? 'not-allowed' : 'pointer';
+  boost.title  = isBoost  ? 'Boost já aplicado — clique em ▼ para reduzir' : 'Aumenta produção de hoje em +50%';
+  reduce.title = isReduce ? 'Redução já aplicada — clique em ▲ para aumentar' : 'Reduz produção de hoje em −50%';
+}
+
+async function _loadDemoState() {
+  try {
+    const res = await fetch('/demo/state');
+    const s = await res.json();
+    _applyDemoState(s.state);
+  } catch (e) {}
+}
+
+async function demoBoost() {
+  const btn = document.getElementById('demoBoostBtn');
+  if (btn.disabled) return;
+  btn.disabled = true; btn.style.opacity = '.35';
+  try {
+    const res = await fetch('/demo/boost', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) { alert(d.message); await _loadDemoState(); return; }
+    _applyDemoState(d.state);
+    await refreshAll();
+  } catch (e) { await _loadDemoState(); }
+}
+
+async function demoReduce() {
+  const btn = document.getElementById('demoReduceBtn');
+  if (btn.disabled) return;
+  btn.disabled = true; btn.style.opacity = '.35';
+  try {
+    const res = await fetch('/demo/reduce', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) { alert(d.message); await _loadDemoState(); return; }
+    _applyDemoState(d.state);
+    await refreshAll();
+  } catch (e) { await _loadDemoState(); }
+}
+
+document.addEventListener('DOMContentLoaded', _loadDemoState);
 </script>
 
 </body>

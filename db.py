@@ -260,6 +260,13 @@ def init_db():
                 next_id INTEGER NOT NULL DEFAULT 1
             );
             INSERT OR IGNORE INTO task_id_sequence (id, next_id) VALUES (1, 1);
+
+            CREATE TABLE IF NOT EXISTS demo_baseline (
+                date     TEXT    NOT NULL,
+                prod_id  INTEGER NOT NULL,
+                produced INTEGER NOT NULL,
+                PRIMARY KEY (date, prod_id)
+            );
         """)
         _seed(conn)
         # Sincroniza a sequência com o MAX real do banco (idempotente)

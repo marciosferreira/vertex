@@ -49,7 +49,7 @@ import json
 import threading
 from sse_starlette.sse import EventSourceResponse
 from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent
-from scheduler.daemon import scheduler_loop
+from scheduler.daemon import scheduler_loop, _execute_task
 import chart_store as cs
 
 _CHART_RE = re.compile(r'\[chart:([a-f0-9\-]{36})\]')
@@ -325,6 +325,100 @@ def root():
     return FileResponse(html, media_type="text/html")
 
 
+# ── demo controls ─────────────────────────────────────────────────────────────
+# Estado computado do banco — resistente a restart e page refresh.
+# Na primeira ação do dia o baseline é persistido em demo_baseline.
+# Estado derivado comparando soma atual vs soma do baseline:
+#   ratio >= 1.4  → "boosted"  (boost desabilitado)
+#   ratio <= 0.6  → "reduced"  (reduce desabilitado)
+#   caso contrário → "normal"  (ambos habilitados)
+
+
+def _demo_ensure_baseline(conn, today: str) -> bool:
+    """Salva o baseline de hoje se ainda não existe. Retorna False se não há dados."""
+    exists = conn.execute(
+        "SELECT COUNT(*) FROM demo_baseline WHERE date = ?", (today,)
+    ).fetchone()[0]
+    if exists:
+        return True
+    rows = conn.execute(
+        "SELECT id, produced FROM production WHERE date = ?", (today,)
+    ).fetchall()
+    if not rows:
+        return False
+    conn.executemany(
+        "INSERT OR IGNORE INTO demo_baseline (date, prod_id, produced) VALUES (?, ?, ?)",
+        [(today, r["id"], r["produced"]) for r in rows],
+    )
+    conn.commit()
+    return True
+
+
+def _demo_compute_state(conn, today: str) -> str:
+    baseline = conn.execute(
+        "SELECT SUM(produced) FROM demo_baseline WHERE date = ?", (today,)
+    ).fetchone()[0]
+    if not baseline:
+        return "normal"
+    current = conn.execute(
+        "SELECT SUM(produced) FROM production WHERE date = ?", (today,)
+    ).fetchone()[0] or 0
+    ratio = current / baseline
+    if ratio >= 1.4:
+        return "boosted"
+    if ratio <= 0.6:
+        return "reduced"
+    return "normal"
+
+
+def _demo_apply_factor(conn, today: str, factor: float) -> None:
+    rows = conn.execute(
+        "SELECT prod_id, produced FROM demo_baseline WHERE date = ?", (today,)
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            "UPDATE production SET produced = ? WHERE id = ?",
+            (round(r["produced"] * factor), r["prod_id"]),
+        )
+
+
+@app.get("/demo/state")
+def demo_state():
+    """Retorna o estado atual dos controles de demo, computado do banco."""
+    today = date.today().isoformat()
+    with get_db() as conn:
+        state = _demo_compute_state(conn, today)
+    return {"state": state}
+
+
+@app.post("/demo/boost")
+def demo_boost():
+    """Seta produção de hoje para +50% do baseline. Desabilitado se já boosted."""
+    today = date.today().isoformat()
+    with get_db() as conn:
+        _demo_ensure_baseline(conn, today)
+        if _demo_compute_state(conn, today) == "boosted":
+            return JSONResponse(status_code=409, content={"error": True, "message": "Boost já aplicado."})
+        _demo_apply_factor(conn, today, 1.5)
+        conn.commit()
+        state = _demo_compute_state(conn, today)
+    return {"ok": True, "state": state}
+
+
+@app.post("/demo/reduce")
+def demo_reduce():
+    """Seta produção de hoje para −50% do baseline. Desabilitado se já reduced."""
+    today = date.today().isoformat()
+    with get_db() as conn:
+        _demo_ensure_baseline(conn, today)
+        if _demo_compute_state(conn, today) == "reduced":
+            return JSONResponse(status_code=409, content={"error": True, "message": "Redução já aplicada."})
+        _demo_apply_factor(conn, today, 0.5)
+        conn.commit()
+        state = _demo_compute_state(conn, today)
+    return {"ok": True, "state": state}
+
+
 # ── agenda ────────────────────────────────────────────────────────────────────
 
 @app.get("/tasks")
@@ -365,6 +459,22 @@ def get_task_runs(task_id: str):
             (task_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.post("/tasks/{task_id}/run-now")
+async def run_task_now(task_id: str):
+    """Dispara execução imediata da task em background. Só funciona se status=active."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
+    task = dict(row)
+    if task["status"] != "active":
+        return JSONResponse(status_code=409, content={"error": True, "message": f"Task deve estar ativa para execução manual (status atual: {task['status']})."})
+    asyncio.create_task(asyncio.to_thread(_execute_task, task))
+    return {"ok": True, "message": "Execução iniciada."}
 
 
 @app.post("/tasks/{task_id}/toggle-pause")
@@ -762,6 +872,27 @@ def get_lines_status():
 
 
 # ── alertas ───────────────────────────────────────────────────────────────────
+
+@app.get("/alerts")
+def get_alerts(all: bool = False):
+    """Retorna alertas de threshold. Por padrão apenas não lidos; ?all=true retorna os últimos 100."""
+    return cs.get_alerts(unread_only=not all)
+
+
+@app.post("/alerts/{alert_id}/read")
+def mark_alert_read(alert_id: str):
+    """Marca um alerta como lido."""
+    ok = cs.mark_alert_read(alert_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Alerta não encontrado."})
+    return {"ok": True}
+
+
+@app.post("/alerts/read-all")
+def mark_all_alerts_read():
+    """Marca todos os alertas não lidos como lidos."""
+    count = cs.mark_all_alerts_read()
+    return {"ok": True, "marked": count}
 
 
 # ── kpis (snapshot por turno) ─────────────────────────────────────────────────

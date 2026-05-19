@@ -21,7 +21,7 @@ import os
 REPORTS_DIR = Path(__file__).parent.parent / "reports"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-_CHECK_INTERVAL_SECONDS = 120
+_CHECK_INTERVAL_SECONDS = 60
 _TASK_TIMEOUT_SECONDS   = 600          # 10 min — mata execuções travadas
 _RETRY_BACKOFF_MINUTES  = [5, 15, 60]  # espera entre tentativas (1ª, 2ª, 3ª)
 
