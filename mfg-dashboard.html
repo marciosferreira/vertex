@@ -1117,7 +1117,7 @@
       </div>
       <div id="imagePreviewWrap"></div>
       <div class="chat-actions">
-        <button class="chat-screenshot" id="chatScreenshotBtn" onclick="startScreenshot()" title="Selecionar área da tela">📷</button>
+        <button class="chat-screenshot" id="chatScreenshotBtn" onclick="startScreenshot()" title="Selecionar área da tela" style="display:none">📷</button>
         <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
         <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
       </div>
@@ -1885,6 +1885,11 @@ let _capturedFrame  = null;  // canvas com o frame completo da aba
 let _frameScale     = 1;     // relação vídeo px / CSS px
 let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir permissão repetida)
 
+// Mostra o botão de screenshot apenas em browsers que suportam getDisplayMedia (desktop)
+if (navigator.mediaDevices?.getDisplayMedia) {
+  document.getElementById('chatScreenshotBtn').style.display = '';
+}
+
 (function() {
   let _startX = 0, _startY = 0, _dragging = false;
   const overlay = () => document.getElementById('screenshotOverlay');
@@ -1899,6 +1904,9 @@ let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir 
 
     // Pede permissão só se não tem stream ativo
     if (!_screenStream) {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw Object.assign(new Error('Captura de tela não é suportada neste dispositivo/browser.'), { name: 'NotSupportedError' });
+      }
       _screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' },
         preferCurrentTab: true,
@@ -1971,7 +1979,8 @@ let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir 
       overlay().classList.add('active');
     } catch (e) {
       _reopenChat();
-      if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
+      if (e.name === 'NotSupportedError') alert(e.message);
+      else if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
     }
   };
 
