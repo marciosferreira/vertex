@@ -431,6 +431,32 @@ async def list_chat_sessions(user_id: str = Query(default=None)):
         return []
 
 
+@app.delete("/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str):
+    """Deleta uma sessão de chat e todos os artefatos associados."""
+    if not is_multi_agent_ready():
+        return JSONResponse(status_code=503, content={"error": "Agente IA não configurado"})
+    try:
+        with get_db() as conn:
+            for tbl in ("checkpoints", "writes"):
+                try:
+                    conn.execute(f"DELETE FROM {tbl} WHERE thread_id = ?", (session_id,))
+                except Exception:
+                    pass
+            conn.commit()
+        import chart_store as cs
+        cs.delete_charts_for_session(session_id)
+        if cs._conn is not None:
+            with cs._lock:
+                cs._conn.execute("DELETE FROM pdfs WHERE session_id = ?", (session_id,))
+                cs._conn.execute("DELETE FROM excels WHERE session_id = ?", (session_id,))
+                cs._conn.commit()
+        return {"ok": True}
+    except Exception:
+        logger.exception("Erro em DELETE /chat/sessions/%s", session_id)
+        return JSONResponse(status_code=500, content={"error": "Falha ao deletar sessão"})
+
+
 @app.post("/chat/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
     """Recebe áudio (webm/opus), transcreve via Gemini (Vertex AI) e retorna texto."""

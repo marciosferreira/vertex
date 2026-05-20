@@ -230,19 +230,28 @@
   .chat-hist-new:hover { background:rgba(56,189,248,.06); }
 
   .chat-hist-item {
-    display:flex; flex-direction:column; gap:3px;
-    padding:11px 16px; cursor:pointer;
+    display:flex; align-items:center; gap:6px;
+    padding:11px 16px 11px 16px; cursor:pointer;
     border-left:2px solid transparent; transition:all .15s;
     border-bottom:1px solid rgba(255,255,255,.03);
   }
   .chat-hist-item:hover { background:rgba(255,255,255,.03); border-left-color:rgba(56,189,248,.3); }
   .chat-hist-item.active { background:rgba(56,189,248,.06); border-left-color:var(--cyan); }
+  .chi-info { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
   .chi-title {
     font-size:12px; color:var(--txt); line-height:1.4;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .chat-hist-item.active .chi-title { color:var(--cyan); }
   .chi-meta { font-size:10px; color:var(--txt2); font-family:'JetBrains Mono',monospace; }
+  .chi-del {
+    flex-shrink:0; background:none; border:none; cursor:pointer;
+    color:rgba(255,255,255,.2); font-size:14px; line-height:1;
+    padding:2px 4px; border-radius:3px; transition:color .15s, background .15s;
+    opacity:0;
+  }
+  .chat-hist-item:hover .chi-del { opacity:1; }
+  .chi-del:hover { color:#f87171; background:rgba(248,113,113,.1); }
 
   .chat-hist-empty { text-align:center; color:var(--txt2); font-size:12px; padding:24px 16px; }
 
@@ -1481,9 +1490,16 @@ async function loadSessions() {
       const item = document.createElement('div');
       item.className = 'chat-hist-item' + (s.session_id === _sessionId ? ' active' : '');
       item.innerHTML =
-        `<div class="chi-title">${_escHtml(s.title)}</div>` +
-        `<div class="chi-meta">${s.message_count} mensagem${s.message_count !== 1 ? 's' : ''}</div>`;
+        `<div class="chi-info">` +
+          `<div class="chi-title">${_escHtml(s.title)}</div>` +
+          `<div class="chi-meta">${s.message_count} mensagem${s.message_count !== 1 ? 's' : ''}</div>` +
+        `</div>` +
+        `<button class="chi-del" title="Deletar conversa">✕</button>`;
       item.onclick = () => switchSession(s.session_id);
+      item.querySelector('.chi-del').onclick = (e) => {
+        e.stopPropagation();
+        deleteSession(s.session_id, item);
+      };
       list.appendChild(item);
     }
   } catch (e) {
@@ -1506,6 +1522,20 @@ async function switchSession(sessionId) {
   hideHistory();
   document.getElementById('chatMsgs').innerHTML = '';
   await loadChatHistory();
+}
+
+async function deleteSession(sessionId, itemEl) {
+  if (!confirm('Deletar esta conversa? Esta ação não pode ser desfeita.')) return;
+  try {
+    const res = await fetch(`${API_BASE}/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    itemEl.remove();
+    if (sessionId === _sessionId) {
+      newChat();
+    }
+  } catch (e) {
+    alert('Erro ao deletar conversa.');
+  }
 }
 
 function _addMsg(role, html) {
