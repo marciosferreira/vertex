@@ -1886,123 +1886,43 @@ async function _postChartSnapshot() {
 
 // ── Screenshot / seleção de área ─────────────────────
 
-let _pendingImages  = [];    // base64 das imagens capturadas (máx 3)
-let _capturedFrame  = null;  // canvas com o frame completo da aba
-let _frameScale     = 1;     // relação vídeo px / CSS px
-let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir permissão repetida)
+let _pendingImages = [];   // base64 das imagens capturadas (máx 3)
+let _capturedFrame = null; // canvas com o frame completo capturado
 
-// Mostra o botão sempre — desktop usa getDisplayMedia, mobile usa html2canvas como fallback
 document.getElementById('chatScreenshotBtn').style.display = '';
 
 (function() {
   let _startX = 0, _startY = 0, _dragging = false;
-  const overlay = () => document.getElementById('screenshotOverlay');
+  const overlay  = () => document.getElementById('screenshotOverlay');
   const selRect  = () => document.getElementById('selectionRect');
+  const spinner  = () => document.getElementById('screenshotSpinner');
 
-  // ── 1. Captura frame — getDisplayMedia em desktop, html2canvas em mobile ───
   async function _grabFrame() {
-    // Fallback para mobile (sem getDisplayMedia) — usa html-to-image (SVG foreignObject, suporta oklch)
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      _frameScale = window.devicePixelRatio || 1;
-      const canvas = await htmlToImage.toCanvas(document.body, {
-        pixelRatio: Math.min(_frameScale, 1.5), // limita para não gerar canvas gigante
-        skipFonts: true,  // evita buscar Google Fonts + Font Awesome pela rede (maior gargalo)
-        cacheBust: false,
-      });
-      return canvas;
-    }
-
-    // Desktop: usa getDisplayMedia (captura nativa da aba)
-    if (_screenStream && !_screenStream.active) {
-      _screenStream = null;
-    }
-    if (!_screenStream) {
-      _screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'browser' },
-        preferCurrentTab: true,
-      });
-      _screenStream.getVideoTracks()[0].addEventListener('ended', () => {
-        _screenStream = null;
-      });
-    }
-
-    const video = document.createElement('video');
-    video.muted = true;
-    video.srcObject = _screenStream;
-    await new Promise(res => { video.onloadedmetadata = res; });
-    await video.play();
-    _frameScale = video.videoWidth / window.innerWidth;
-
-    function waitFrames(n) {
-      return new Promise(res => {
-        if ('requestVideoFrameCallback' in video) {
-          let count = 0;
-          const tick = () => { if (++count >= n) res(); else video.requestVideoFrameCallback(tick); };
-          video.requestVideoFrameCallback(tick);
-        } else {
-          const check = () => video.readyState >= 2 ? res() : setTimeout(check, 30);
-          setTimeout(check, n * 40);
-        }
-      });
-    }
-
-    function isBlank(canvas) {
-      const d = canvas.getContext('2d').getImageData(0, 0, Math.min(canvas.width, 64), Math.min(canvas.height, 64)).data;
-      for (let i = 0; i < d.length; i += 4) if (d[i] | d[i+1] | d[i+2]) return false;
-      return true;
-    }
-
-    let fc, attempt = 0;
-    do {
-      await waitFrames(attempt === 0 ? 2 : 1);
-      fc = document.createElement('canvas');
-      fc.width  = video.videoWidth;
-      fc.height = video.videoHeight;
-      fc.getContext('2d').drawImage(video, 0, 0);
-    } while (isBlank(fc) && ++attempt < 3);
-
-    video.pause();
-    video.srcObject = null;
-    return fc;
+    const scale = Math.min(window.devicePixelRatio || 1, 1.5);
+    return htmlToImage.toCanvas(document.body, {
+      pixelRatio: scale,
+      skipFonts: true,
+      cacheBust: false,
+    });
   }
 
-  const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   let _chatWasOpen = false;
-  let _pendingSel = null; // {x,y,w,h} — coordenadas salvas no mobile até a captura terminar
-
   function _reopenChat() {
     if (_chatWasOpen) { _chatWasOpen = false; openChat(); }
   }
 
-  window.startScreenshot = async function() {
-    try {
-      const sidebar = document.getElementById('chatSidebar');
-      _chatWasOpen = !sidebar.classList.contains('collapsed');
-      if (_chatWasOpen) {
-        closeChat();
-        await new Promise(res => setTimeout(res, 280));
-      }
-
-      if (_isMobile) {
-        // Mobile: abre overlay imediatamente; captura só após seleção
-        overlay().classList.add('active');
-      } else {
-        // Desktop: captura primeiro, depois abre overlay
-        _capturedFrame = await _grabFrame();
-        overlay().classList.add('active');
-      }
-    } catch (e) {
-      _reopenChat();
-      if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
-    }
+  window.startScreenshot = function() {
+    const sidebar = document.getElementById('chatSidebar');
+    _chatWasOpen = !sidebar.classList.contains('collapsed');
+    if (_chatWasOpen) closeChat();
+    overlay().classList.add('active');
   };
 
-  // ── 2. Desenha retângulo de seleção ───────────────────
+  // ── Desenha retângulo de seleção ───────────────────
   function _updateRect(x1, y1, x2, y2) {
-    const left  = Math.min(x1, x2), top    = Math.min(y1, y2);
-    const width = Math.abs(x2 - x1), height = Math.abs(y2 - y1);
+    const left = Math.min(x1, x2), top = Math.min(y1, y2);
     selRect().style.cssText =
-      `display:block;left:${left}px;top:${top}px;width:${width}px;height:${height}px;`;
+      `display:block;left:${left}px;top:${top}px;width:${Math.abs(x2-x1)}px;height:${Math.abs(y2-y1)}px;`;
   }
 
   function _selStart(cx, cy) {
@@ -2019,36 +1939,28 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     if (!_dragging) return;
     _dragging = false;
 
-    const x = Math.min(_startX, cx);
-    const y = Math.min(_startY, cy);
-    const w = Math.abs(cx - _startX);
-    const h = Math.abs(cy - _startY);
+    const x = Math.min(_startX, cx), y = Math.min(_startY, cy);
+    const w = Math.abs(cx - _startX),  h = Math.abs(cy - _startY);
 
     overlay().classList.remove('active');
     selRect().style.display = 'none';
 
     if (w < 10 || h < 10) { _reopenChat(); return; }
 
-    if (_isMobile) {
-      // Mobile: captura agora (overlay já fechado, chat ainda fechado)
-      const spinner = document.getElementById('screenshotSpinner');
-      spinner.style.display = 'flex';
-      try {
-        _capturedFrame = await _grabFrame();
-      } catch (e) {
-        spinner.style.display = 'none';
-        _reopenChat();
-        if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
-        return;
-      }
-      spinner.style.display = 'none';
+    spinner().style.display = 'flex';
+    try {
+      _capturedFrame = await _grabFrame();
+    } catch (e) {
+      spinner().style.display = 'none';
+      _reopenChat();
+      alert('Erro ao capturar tela: ' + e.message);
+      return;
     }
+    spinner().style.display = 'none';
 
     _reopenChat();
 
-    if (!_capturedFrame) return;
-
-    const s = _frameScale;
+    const s = Math.min(window.devicePixelRatio || 1, 1.5);
     const crop = document.createElement('canvas');
     crop.width  = Math.round(w * s);
     crop.height = Math.round(h * s);
@@ -2059,10 +1971,7 @@ document.getElementById('chatScreenshotBtn').style.display = '';
       0, 0, crop.width, crop.height
     );
 
-    if (_pendingImages.length >= 3) {
-      alert('Máximo de 3 imagens por mensagem.');
-      return;
-    }
+    if (_pendingImages.length >= 3) { alert('Máximo de 3 imagens por mensagem.'); return; }
     _pendingImages.push(crop.toDataURL('image/png').split(',')[1]);
     _renderImagePreviews();
     document.getElementById('chatInput').focus();
