@@ -1961,7 +1961,9 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     return fc;
   }
 
+  const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   let _chatWasOpen = false;
+  let _pendingSel = null; // {x,y,w,h} — coordenadas salvas no mobile até a captura terminar
 
   function _reopenChat() {
     if (_chatWasOpen) { _chatWasOpen = false; openChat(); }
@@ -1969,16 +1971,21 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
   window.startScreenshot = async function() {
     try {
-      // Fecha o chat para não aparecer no screenshot
       const sidebar = document.getElementById('chatSidebar');
       _chatWasOpen = !sidebar.classList.contains('collapsed');
       if (_chatWasOpen) {
         closeChat();
-        await new Promise(res => setTimeout(res, 280)); // aguarda transição
+        await new Promise(res => setTimeout(res, 280));
       }
 
-      _capturedFrame = await _grabFrame();
-      overlay().classList.add('active');
+      if (_isMobile) {
+        // Mobile: abre overlay imediatamente; captura só após seleção
+        overlay().classList.add('active');
+      } else {
+        // Desktop: captura primeiro, depois abre overlay
+        _capturedFrame = await _grabFrame();
+        overlay().classList.add('active');
+      }
     } catch (e) {
       _reopenChat();
       if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
@@ -2003,7 +2010,7 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     if (!_dragging) return;
     _updateRect(_startX, _startY, cx, cy);
   }
-  function _selEnd(cx, cy) {
+  async function _selEnd(cx, cy) {
     if (!_dragging) return;
     _dragging = false;
 
@@ -2014,9 +2021,23 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
     overlay().classList.remove('active');
     selRect().style.display = 'none';
+
+    if (w < 10 || h < 10) { _reopenChat(); return; }
+
+    if (_isMobile) {
+      // Mobile: captura agora (overlay já fechado, chat ainda fechado)
+      try {
+        _capturedFrame = await _grabFrame();
+      } catch (e) {
+        _reopenChat();
+        if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
+        return;
+      }
+    }
+
     _reopenChat();
 
-    if (w < 10 || h < 10 || !_capturedFrame) return;
+    if (!_capturedFrame) return;
 
     const s = _frameScale;
     const crop = document.createElement('canvas');
