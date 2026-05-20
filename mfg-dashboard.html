@@ -60,15 +60,20 @@
   /* HEADER */
   header {
     display:flex; align-items:center; justify-content:space-between;
-    padding:0 28px; height:58px; gap:16px;
+    flex-wrap:wrap;
+    padding:8px 28px; min-height:58px; gap:6px 16px;
     background:rgba(15,21,32,0.97); border-bottom:1px solid var(--border);
     position:sticky; top:0; z-index:100;
   }
+
+  /* APP LAYOUT */
+  :root { --chat-w: 360px; --hdr-h: 58px; }
+  #appWrap { display:block; }
   .logo { display:flex; align-items:center; gap:10px; flex-shrink:0; }
   .logo-hex { width:32px; height:32px; background:var(--cyan); clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%); }
   .logo-name { font-size:16px; font-weight:700; letter-spacing:.06em; }
   .logo-sub { font-size:9px; letter-spacing:.2em; color:var(--cyan); font-family:'JetBrains Mono',monospace; }
-  .hdr-r { display:flex; align-items:center; gap:12px; margin-left:auto; }
+  .hdr-r { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; margin-left:auto; }
   .live { display:flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--green); letter-spacing:.1em; }
   .dot { width:7px; height:7px; border-radius:50%; background:var(--green); animation:pulse 1.6s ease-in-out infinite; }
   .dot.offline { background:var(--red); animation:none; }
@@ -108,7 +113,7 @@
   .section-lbl { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--txt3); letter-spacing:.16em; text-transform:uppercase; }
 
   /* PER-CHART CONTROLS */
-  .card-controls { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+  .card-controls { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
   .cf-sel {
     background:var(--surface); border:1px solid var(--border);
     color:var(--txt2); font-family:'JetBrains Mono',monospace;
@@ -133,12 +138,13 @@
   /* GRID */
   .g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
   .g21 { display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:16px; }
+  .g2 > *, .g21 > * { min-width:0; }
   .gcol { display:flex; flex-direction:column; gap:16px; }
 
   /* CARDS */
   .card { background:var(--panel); border:1px solid var(--border); overflow:hidden; }
-  .card-head { display:flex; align-items:center; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); gap:8px; }
-  .card-title { font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--txt2); font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:7px; flex-shrink:0; }
+  .card-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:10px 18px; border-bottom:1px solid var(--border); gap:6px 8px; }
+  .card-title { font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--txt2); font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:7px; }
   .ctdot { width:5px; height:5px; border-radius:50%; }
   .card-badge { font-family:'JetBrains Mono',monospace; font-size:9px; padding:2px 7px; border:1px solid var(--border); color:var(--txt3); flex-shrink:0; }
   .card-body { padding:16px 18px; }
@@ -176,22 +182,42 @@
   .kpi:nth-child(5){animation-delay:.20s}
   .card { animation:fadeUp .5s ease both; animation-delay:.2s; }
 
-  /* CHAT SIDEBAR — draggable overlay */
-  .main-wrap { margin-right: 0; }
+  /* CHAT SIDEBAR — push via margin + fixed overlay */
+  .main-wrap {
+    overflow-x:hidden; container-type:inline-size; container-name:main;
+    margin-right: min(var(--chat-w), calc(100vw - 280px));
+    transition: margin-right .25s ease;
+  }
+
+  @container main (max-width: 960px) {
+    .g2, .g21 { grid-template-columns: 1fr !important; }
+    .kpi-row   { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+  @container main (max-width: 480px) {
+    .kpi-row { grid-template-columns: 1fr !important; }
+  }
+  @container main (max-width: 200px) {
+    .page { visibility: hidden; }
+  }
 
   .chat-sidebar {
-    position:fixed; right:0; top:58px; bottom:0; width:360px;
+    position:fixed; right:0; top:var(--hdr-h); bottom:0;
+    width: var(--chat-w);
+    max-width: calc(100vw - 60px);
+    height:calc(100vh - var(--hdr-h));
     background:#0d1626; border-left:1px solid var(--border);
-    display:flex; flex-direction:column; z-index:200;
-    min-width:280px;
+    display:flex; flex-direction:column;
     box-shadow:-6px 0 32px rgba(0,0,0,.5);
+    transition:width .25s ease;
+    overflow:hidden; overflow:clip;
+    z-index:200;
   }
   .chat-sidebar.collapsed {
-    width:0 !important; min-width:0 !important; border-left:none; overflow:hidden; pointer-events:none;
+    border-left:none; pointer-events:none;
   }
 
   /* body wrapper so history panel can overlay absolutely */
-  .chat-body { flex:1; display:flex; flex-direction:column; position:relative; overflow:hidden; min-height:0; }
+  .chat-body { flex:1; display:flex; flex-direction:column; position:relative; overflow:hidden; overflow:clip; min-height:0; }
 
   /* ── History panel ── */
   .chat-hist-panel {
@@ -257,12 +283,29 @@
 
   /* drag handle */
   .chat-resize-handle {
-    position:absolute; left:0; top:0; bottom:0; width:5px;
+    position:absolute; left:0; top:0; bottom:0; width:12px;
     cursor:ew-resize; z-index:10;
+    display:flex; align-items:center; justify-content:center;
     background:transparent; transition:background .15s;
+    touch-action:none; /* impede scroll ao arrastar em mobile */
+  }
+  @media (max-width: 768px) {
+    .chat-resize-handle { width:24px; } /* área de toque maior em mobile */
+  }
+  .chat-resize-handle::after {
+    content:'';
+    width:3px; height:32px; border-radius:3px;
+    background:var(--border);
+    box-shadow: 4px 0 0 var(--border);
+    transition:background .15s, box-shadow .15s;
+    flex-shrink:0;
+  }
+  .chat-resize-handle:hover::after, .chat-resize-handle.active::after {
+    background:var(--cyan);
+    box-shadow: 4px 0 0 var(--cyan);
   }
   .chat-resize-handle:hover, .chat-resize-handle.active {
-    background:rgba(56,189,248,.25);
+    background:rgba(56,189,248,.06);
   }
 
   /* floating reopen button */
@@ -277,6 +320,25 @@
   }
   .chat-open-btn.visible { display:block; }
   .chat-open-btn:hover { background:rgba(56,189,248,.08); border-color:var(--cyan); }
+
+  /* ── MOBILE ─────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    header { padding: 0 12px; gap: 8px; }
+    .last-update, .api-status { display: none; }
+    .page { padding: 10px 10px 24px; }
+  }
+  @media (max-width: 480px) {
+    .hdr-r { gap: 6px; }
+    .refresh-btn { padding: 4px 8px; font-size: 10px; }
+    .clk { display: none; }
+  }
+
+  /* Backdrop mobile */
+  #chatBackdrop {
+    display: none; position: fixed; inset: 0; z-index: 199;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(2px);
+  }
+  #chatBackdrop.visible { display: block; }
 
   .chat-head {
     padding:14px 16px 12px; flex-shrink:0;
@@ -393,7 +455,7 @@
   /* Overlay de seleção de área */
   #screenshotOverlay {
     display:none; position:fixed; inset:0; z-index:9999;
-    cursor:crosshair; user-select:none;
+    cursor:crosshair; user-select:none; touch-action:none;
   }
   #screenshotOverlay.active { display:block; }
   #selectionRect {
@@ -402,9 +464,11 @@
     box-shadow:0 0 0 9999px rgba(0,0,0,.35);
   }
 
-  /* Preview de imagens na barra de ações */
+  /* Preview de imagens — linha própria acima dos botões */
   #imagePreviewWrap {
-    display:none; align-items:center; gap:6px; flex:1;
+    display:none; align-items:center; gap:8px;
+    padding:4px 2px 2px;
+    border-top:1px solid rgba(56,189,248,.08);
   }
   #imagePreviewWrap.visible { display:flex; }
   .img-thumb-wrap { position:relative; flex-shrink:0; }
@@ -584,7 +648,6 @@
   </div>
 </div>
 
-<div class="main-wrap">
 <header>
   <div class="logo">
     <div class="logo-hex"></div>
@@ -622,6 +685,8 @@
     <span class="last-update" id="lastUpdate"></span>
   </div>
 </header>
+<div id="appWrap">
+<div class="main-wrap">
 
 <!-- ── Painel de Alertas ───────────────────────────────────────────────────── -->
 <div id="alertsOverlay" onclick="closeAlertsPanel()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;backdrop-filter:blur(2px);"></div>
@@ -1026,8 +1091,7 @@
 
 </div><!-- /.main-wrap -->
 
-<button class="chat-open-btn" id="chatOpenBtn" onclick="openChat()">CHAT IA</button>
-
+<div id="chatBackdrop" onclick="closeChat()"></div>
 <aside class="chat-sidebar" id="chatSidebar">
   <div class="chat-resize-handle" id="chatResizeHandle"></div>
   <div class="chat-head">
@@ -1050,18 +1114,14 @@
         <audio id="audioPlayer" controls></audio>
         <button class="audio-discard" id="audioDiscardBtn" onclick="discardAudio()" title="Descartar gravação">✕</button>
       </div>
+      <div id="imagePreviewWrap"></div>
       <div class="chat-actions">
-        <div id="imagePreviewWrap"></div>
         <button class="chat-screenshot" id="chatScreenshotBtn" onclick="startScreenshot()" title="Selecionar área da tela">📷</button>
         <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
         <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
       </div>
     </div>
 
-    <!-- Overlay de seleção de área da tela -->
-    <div id="screenshotOverlay">
-      <div id="selectionRect" style="display:none;"></div>
-    </div>
     <div class="chat-hist-panel" id="chatHistPanel">
       <div class="chat-hist-head">
         <span class="chat-hist-label">CONVERSAS</span>
@@ -1071,6 +1131,14 @@
     </div>
   </div>
 </aside>
+</div><!-- /#appWrap -->
+
+<button class="chat-open-btn" id="chatOpenBtn" onclick="openChat()">CHAT IA</button>
+
+<!-- Screenshot overlay — fora do sidebar para não ser clipado pelo overflow:clip -->
+<div id="screenshotOverlay">
+  <div id="selectionRect" style="display:none;"></div>
+</div>
 
 <!-- Chart Modal -->
 <div class="chart-modal-overlay hidden" id="chartModal" onclick="closeChartModal(event)">
@@ -1814,20 +1882,18 @@ async function _postChartSnapshot() {
 let _pendingImages  = [];    // base64 das imagens capturadas (máx 3)
 let _capturedFrame  = null;  // canvas com o frame completo da aba
 let _frameScale     = 1;     // relação vídeo px / CSS px
-let _screenStream   = null;  // MediaStream mantido entre capturas
-let _screenVideo    = null;  // <video> reutilizado
+let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir permissão repetida)
 
 (function() {
   let _startX = 0, _startY = 0, _dragging = false;
   const overlay = () => document.getElementById('screenshotOverlay');
   const selRect  = () => document.getElementById('selectionRect');
 
-  // ── 1. Captura frame — pede permissão só na 1ª vez ───
+  // ── 1. Captura frame — reutiliza stream, cria video novo a cada vez ───
   async function _grabFrame() {
     // Se o stream morreu (usuário revogou), limpa
     if (_screenStream && !_screenStream.active) {
       _screenStream = null;
-      _screenVideo  = null;
     }
 
     // Pede permissão só se não tem stream ativo
@@ -1836,34 +1902,74 @@ let _screenVideo    = null;  // <video> reutilizado
         video: { displaySurface: 'browser' },
         preferCurrentTab: true,
       });
-      _screenVideo = document.createElement('video');
-      _screenVideo.muted = true;
-      _screenVideo.srcObject = _screenStream;
-      await new Promise(res => { _screenVideo.onloadedmetadata = res; });
-      await _screenVideo.play();
-      _frameScale = _screenVideo.videoWidth / window.innerWidth;
-
-      // Limpa referências quando o usuário para o compartilhamento
       _screenStream.getVideoTracks()[0].addEventListener('ended', () => {
         _screenStream = null;
-        _screenVideo  = null;
       });
     }
 
-    // Aguarda frame estável e retorna canvas com snapshot atual
-    await new Promise(res => setTimeout(res, 80));
-    const fc = document.createElement('canvas');
-    fc.width  = _screenVideo.videoWidth;
-    fc.height = _screenVideo.videoHeight;
-    fc.getContext('2d').drawImage(_screenVideo, 0, 0);
+    // Cria video limpo a cada captura — evita estado stale do elemento reutilizado
+    const video = document.createElement('video');
+    video.muted = true;
+    video.srcObject = _screenStream;
+    await new Promise(res => { video.onloadedmetadata = res; });
+    await video.play();
+    _frameScale = video.videoWidth / window.innerWidth;
+
+    // Aguarda N frames consecutivos — o 1º frame pode ser preto enquanto o pipeline inicializa
+    function waitFrames(n) {
+      return new Promise(res => {
+        if ('requestVideoFrameCallback' in video) {
+          let count = 0;
+          const tick = () => { if (++count >= n) res(); else video.requestVideoFrameCallback(tick); };
+          video.requestVideoFrameCallback(tick);
+        } else {
+          const check = () => video.readyState >= 2 ? res() : setTimeout(check, 30);
+          setTimeout(check, n * 40); // ~40ms por frame a 25fps
+        }
+      });
+    }
+
+    // Tenta capturar, verifica se o canvas está em branco, e repete até 3x
+    function isBlank(canvas) {
+      const d = canvas.getContext('2d').getImageData(0, 0, Math.min(canvas.width, 64), Math.min(canvas.height, 64)).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i] | d[i+1] | d[i+2]) return false;
+      return true;
+    }
+
+    let fc, attempt = 0;
+    do {
+      await waitFrames(attempt === 0 ? 2 : 1); // 2 frames na 1ª tentativa, 1 nas demais
+      fc = document.createElement('canvas');
+      fc.width  = video.videoWidth;
+      fc.height = video.videoHeight;
+      fc.getContext('2d').drawImage(video, 0, 0);
+    } while (isBlank(fc) && ++attempt < 3);
+
+    video.pause();
+    video.srcObject = null;
     return fc;
+  }
+
+  let _chatWasOpen = false;
+
+  function _reopenChat() {
+    if (_chatWasOpen) { _chatWasOpen = false; openChat(); }
   }
 
   window.startScreenshot = async function() {
     try {
+      // Fecha o chat para não aparecer no screenshot
+      const sidebar = document.getElementById('chatSidebar');
+      _chatWasOpen = !sidebar.classList.contains('collapsed');
+      if (_chatWasOpen) {
+        closeChat();
+        await new Promise(res => setTimeout(res, 280)); // aguarda transição
+      }
+
       _capturedFrame = await _grabFrame();
       overlay().classList.add('active');
     } catch (e) {
+      _reopenChat();
       if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
     }
   };
@@ -1876,31 +1982,28 @@ let _screenVideo    = null;  // <video> reutilizado
       `display:block;left:${left}px;top:${top}px;width:${width}px;height:${height}px;`;
   }
 
-  document.addEventListener('mousedown', e => {
+  function _selStart(cx, cy) {
     if (!overlay().classList.contains('active')) return;
-    e.preventDefault();
     _dragging = true;
-    _startX = e.clientX; _startY = e.clientY;
-    _updateRect(_startX, _startY, _startX, _startY);
-  });
-
-  document.addEventListener('mousemove', e => {
+    _startX = cx; _startY = cy;
+    _updateRect(cx, cy, cx, cy);
+  }
+  function _selMove(cx, cy) {
     if (!_dragging) return;
-    _updateRect(_startX, _startY, e.clientX, e.clientY);
-  });
-
-  // ── 3. Recorta o frame no mouseup ─────────────────────
-  document.addEventListener('mouseup', e => {
+    _updateRect(_startX, _startY, cx, cy);
+  }
+  function _selEnd(cx, cy) {
     if (!_dragging) return;
     _dragging = false;
 
-    const x = Math.min(_startX, e.clientX);
-    const y = Math.min(_startY, e.clientY);
-    const w = Math.abs(e.clientX - _startX);
-    const h = Math.abs(e.clientY - _startY);
+    const x = Math.min(_startX, cx);
+    const y = Math.min(_startY, cy);
+    const w = Math.abs(cx - _startX);
+    const h = Math.abs(cy - _startY);
 
     overlay().classList.remove('active');
     selRect().style.display = 'none';
+    _reopenChat();
 
     if (w < 10 || h < 10 || !_capturedFrame) return;
 
@@ -1922,7 +2025,33 @@ let _screenVideo    = null;  // <video> reutilizado
     _pendingImages.push(crop.toDataURL('image/png').split(',')[1]);
     _renderImagePreviews();
     document.getElementById('chatInput').focus();
+  }
+
+  // Mouse
+  document.addEventListener('mousedown', e => {
+    if (!overlay().classList.contains('active')) return;
+    e.preventDefault();
+    _selStart(e.clientX, e.clientY);
   });
+  document.addEventListener('mousemove', e => _selMove(e.clientX, e.clientY));
+  document.addEventListener('mouseup',   e => _selEnd(e.clientX, e.clientY));
+
+  // Touch (mobile)
+  overlay().addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    _selStart(t.clientX, t.clientY);
+  }, { passive: false });
+  overlay().addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    _selMove(t.clientX, t.clientY);
+  }, { passive: false });
+  overlay().addEventListener('touchend', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    _selEnd(t.clientX, t.clientY);
+  }, { passive: false });
 
   // ESC cancela
   document.addEventListener('keydown', e => {
@@ -1930,6 +2059,7 @@ let _screenVideo    = null;  // <video> reutilizado
       overlay().classList.remove('active');
       selRect().style.display = 'none';
       _dragging = false;
+      _reopenChat();
     }
   });
 })();
@@ -2130,43 +2260,115 @@ document.getElementById('chatInput').addEventListener('input', function() {
   const sidebar = document.getElementById('chatSidebar');
   const handle  = document.getElementById('chatResizeHandle');
   const openBtn = document.getElementById('chatOpenBtn');
+  const backdrop = document.getElementById('chatBackdrop');
   let dragging = false, startX = 0, startW = 0;
+  let _chatW = 360; // largura salva ao fechar
 
-  handle.addEventListener('mousedown', e => {
+  function setChatW(w) {
+    document.documentElement.style.setProperty('--chat-w', Math.max(0, w) + 'px');
+  }
+
+  function resizeCharts() {
+    if (typeof charts !== 'undefined') {
+      Object.values(charts).forEach(c => { try { c.resize(); } catch(_) {} });
+    }
+  }
+
+  function onDragStart(clientX) {
     dragging = true;
-    startX = e.clientX;
+    startX = clientX;
     startW = sidebar.offsetWidth;
     handle.classList.add('active');
     document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'ew-resize';
-    e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', e => {
+  }
+  function onDragMove(clientX) {
     if (!dragging) return;
-    const delta = startX - e.clientX;
-    const maxW  = Math.floor(window.innerWidth * 0.5);
-    const newW  = Math.min(Math.max(startW + delta, 260), maxW);
-    sidebar.style.width = newW + 'px';
-  });
-
-  document.addEventListener('mouseup', () => {
+    const delta = startX - clientX;
+    const maxW  = window.innerWidth - 60;
+    const newW  = Math.min(Math.max(startW + delta, 200), maxW);
+    _chatW = newW;
+    setChatW(newW);
+  }
+  function onDragEnd() {
     if (!dragging) return;
     dragging = false;
     handle.classList.remove('active');
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
+    setTimeout(resizeCharts, 270);
+  }
+
+  // Mouse
+  handle.addEventListener('mousedown', e => {
+    onDragStart(e.clientX);
+    document.body.style.cursor = 'ew-resize';
+    e.preventDefault();
   });
+  document.addEventListener('mousemove', e => onDragMove(e.clientX));
+  document.addEventListener('mouseup', onDragEnd);
+
+  // Touch
+  handle.addEventListener('touchstart', e => {
+    onDragStart(e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    onDragMove(e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchend', onDragEnd);
 
   window.closeChat = function() {
+    _chatW = sidebar.offsetWidth || _chatW;
+    setChatW(0);
     sidebar.classList.add('collapsed');
     openBtn.classList.add('visible');
+    backdrop.classList.remove('visible');
+    setTimeout(resizeCharts, 270);
   };
+
   window.openChat = function() {
+    const defaultW = window.innerWidth <= 768
+      ? window.innerWidth - 80
+      : _chatW || 360;
+    setChatW(defaultW);
     sidebar.classList.remove('collapsed');
     openBtn.classList.remove('visible');
+    if (window.innerWidth <= 768) backdrop.classList.add('visible');
     document.getElementById('chatInput').focus();
+    setTimeout(resizeCharts, 270);
   };
+
+  // Mobile: começa fechado
+  if (window.innerWidth <= 768) {
+    setChatW(0);
+    sidebar.classList.add('collapsed');
+    openBtn.classList.add('visible');
+  }
+})();
+
+// ── Header height → CSS variable (para sidebar e painéis fixos) ──
+(function() {
+  const hdr = document.querySelector('header');
+  const root = document.documentElement;
+  const panels = [
+    document.getElementById('alertsPanel'),
+    document.getElementById('agendaPanel'),
+    document.getElementById('artifactsPanel'),
+  ].filter(Boolean);
+
+  function applyHdrH() {
+    const h = hdr.offsetHeight;
+    root.style.setProperty('--hdr-h', h + 'px');
+    panels.forEach(p => {
+      p.style.top = h + 'px';
+      p.style.height = 'calc(100vh - ' + h + 'px)';
+    });
+  }
+
+  new ResizeObserver(applyHdrH).observe(hdr);
+  applyHdrH();
 })();
 
 // Links externos abrem em nova aba (compatible com marked v12+)

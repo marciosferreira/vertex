@@ -383,7 +383,10 @@ async def chat_history(session_id: str = "default"):
         result = []
         for msg in state.get("channel_values", {}).get("messages", []):
             if isinstance(msg, HumanMessage):
-                result.append({"role": "user", "content": msg.content if isinstance(msg.content, str) else ""})
+                content = msg.content
+                if isinstance(content, list):
+                    content = " ".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+                result.append({"role": "user", "content": content or ""})
             elif isinstance(msg, AIMessage):
                 content = msg.content
                 if isinstance(content, list):
