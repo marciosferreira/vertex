@@ -1913,17 +1913,34 @@ document.getElementById('chatScreenshotBtn').style.display = '';
         windowWidth: document.documentElement.scrollWidth,
         windowHeight: document.documentElement.scrollHeight,
         onclone: (_doc, clonedBody) => {
-          // html2canvas não suporta oklch — copia valores computados (já em rgb) do doc original
-          const origEls   = document.body.querySelectorAll('*');
-          const cloneEls  = clonedBody.querySelectorAll('*');
+          // html2canvas não suporta oklch — resolve cada valor único via elemento temporário
+          const _resolveCache = {};
+          const _tmp = document.createElement('div');
+          _tmp.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+          document.body.appendChild(_tmp);
+          const resolveOklch = (match) => {
+            if (!_resolveCache[match]) {
+              _tmp.style.color = match;
+              _resolveCache[match] = getComputedStyle(_tmp).color || '#888';
+            }
+            return _resolveCache[match];
+          };
+
+          // Substitui oklch nos <style> tags do clone (Tailwind, etc.)
+          _doc.querySelectorAll('style').forEach(s => {
+            s.textContent = s.textContent.replace(/oklch\([^)]+\)/g, resolveOklch);
+          });
+
+          document.body.removeChild(_tmp);
+
+          // Copia cores computadas (já em rgb) para cada elemento do clone
+          const origEls  = document.body.querySelectorAll('*');
+          const cloneEls = clonedBody.querySelectorAll('*');
           origEls.forEach((orig, i) => {
             const cl = cloneEls[i];
             if (!cl) return;
             const cs = getComputedStyle(orig);
-            COLOR_PROPS.forEach(p => {
-              const v = cs[p];
-              if (v) cl.style[p] = v;
-            });
+            COLOR_PROPS.forEach(p => { const v = cs[p]; if (v) cl.style[p] = v; });
           });
         },
       });
