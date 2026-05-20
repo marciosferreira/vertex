@@ -1,0 +1,14 @@
+{
+  "task_id": "009",
+  "task_name": "Monitorar Produção Diária Acima de 2000",
+  "run_at": "2026-05-20T19:52:32.174583",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_5m",
+    "weekday": null,
+    "day": null,
+    "time": "00:00"
+  }
+}

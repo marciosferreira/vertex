@@ -173,10 +173,16 @@ def _ns_summary(ns: dict) -> str:
 def _extract_thinking(msg) -> str:
     content = getattr(msg, "content", "")
     if isinstance(content, list):
-        return "\n".join(
-            p.get("thinking", "") for p in content
-            if isinstance(p, dict) and p.get("type") == "thinking"
-        )
+        parts = []
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            # formato Gemini thought summaries: part.thought == True
+            if p.get("thought") or p.get("type") == "thinking":
+                text = p.get("text") or p.get("thinking", "")
+                if text:
+                    parts.append(str(text))
+        return "\n".join(parts)
     return getattr(msg, "additional_kwargs", {}).get("reasoning_content", "")
 
 
@@ -184,10 +190,32 @@ def _extract_text_content(msg) -> str:
     content = getattr(msg, "content", "")
     if isinstance(content, list):
         return "\n".join(
-            p.get("text", "") for p in content
+            str(p.get("text", "")) for p in content
             if isinstance(p, dict) and p.get("type") in ("text", None)
         )
     return content if isinstance(content, str) else ""
+
+
+def _emit_agent_events(response, push_fn) -> None:
+    """Extrai thinking, texto pré-tool e tool calls de qualquer resposta de agente
+    e emite eventos via push_fn(event_dict)."""
+    thinking = _extract_thinking(response)
+    if thinking:
+        push_fn({"type": "thinking", "text": thinking})
+
+    tool_calls = getattr(response, "tool_calls", None) or []
+    fc = getattr(response, "additional_kwargs", {}).get("function_call")
+    if not tool_calls and fc:
+        tool_calls = [{"name": fc.get("name", "")}]
+
+    if tool_calls:
+        pre_text = _extract_text_content(response)
+        if pre_text:
+            push_fn({"type": "thinking", "text": pre_text})
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            label = _TOOL_LABELS.get(name, f"⚙ {name}")
+            push_fn({"type": "tool", "name": name, "label": label})
 
 
 # ── Side-channel de eventos do sub-agente ─────────────────────────────────────
@@ -998,7 +1026,11 @@ def _build_sub_agent(llm):
         "REGRA: preencha com o que REALMENTE foi executado — endpoint real, colunas reais,\n"
         "código pandas real. NUNCA invente ou generalize. NUNCA inclua datas específicas\n"
         "no endpoint ou nos params — datas são sempre injetadas via from_date/to_date.\n\n"
-        f"## Skills disponíveis\n{catalogo}"
+        f"## Skills disponíveis\n{catalogo}\n\n"
+        "## RACIOCÍNIO OBRIGATÓRIO\n"
+        "SEMPRE que for chamar uma tool, inclua na mesma resposta um texto curto explicando "
+        "o que vai fazer e por quê, ANTES do bloco de função. "
+        "NUNCA emita uma tool call sem texto explicativo."
     )
 
     sub_tools = [read_skill, chamar_api, executar_sql, analisar_dataframe, gerar_pdf, gerar_excel]
@@ -1016,13 +1048,7 @@ def _build_sub_agent(llm):
 
         # Empurra thinking e tool calls do sub-agente para o side-channel
         session = _current_session.get()
-        thinking = _extract_thinking(response)
-        if thinking:
-            _push_event(session, {"type": "thinking", "text": thinking})
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tc in response.tool_calls:
-                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
-                _push_event(session, {"type": "tool", "name": tc["name"], "label": label})
+        _emit_agent_events(response, lambda ev: _push_event(session, ev))
 
         if finish == "MALFORMED_FUNCTION_CALL":
             bad = meta.get("finish_message", "")
@@ -1270,7 +1296,11 @@ def _build_scheduler_agent(llm):
         "## REGRA DE RESPOSTA — OBRIGATÓRIA\n"
         "Sempre retorne o output LITERAL e COMPLETO da tool na sua resposta final.\n"
         "NUNCA resuma, NUNCA substitua por frases como 'concluído' ou 'listagem feita'.\n"
-        "O orquestrador depende do conteúdo exato para repassar ao usuário."
+        "O orquestrador depende do conteúdo exato para repassar ao usuário.\n\n"
+        "## RACIOCÍNIO OBRIGATÓRIO\n"
+        "SEMPRE que for chamar uma tool, inclua na mesma resposta um texto curto explicando "
+        "o que vai fazer e por quê, ANTES do bloco de função. "
+        "NUNCA emita uma tool call sem texto explicativo."
     )
 
     llm_sch = llm.bind_tools(sch_tools)
@@ -1280,10 +1310,7 @@ def _build_scheduler_agent(llm):
         msgs = [SystemMessage(content=SCH_SYSTEM_PROMPT)] + list(state["messages"])
         response = llm_sch.invoke(msgs)
         session = _current_session.get()
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tc in response.tool_calls:
-                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
-                _push_event(session, {"type": "tool", "name": tc["name"], "label": label})
+        _emit_agent_events(response, lambda ev: _push_event(session, ev))
         return {"messages": [response]}
 
     def sch_para_onde(state: State) -> str:
@@ -1509,7 +1536,13 @@ def _build_orchestrator(llm, checkpointer=None):
         "- Gerar gráfico com consultar_analista NÃO salva o task_code. Só save_task_code persiste.\n"
         "- Dizer 'tarefa atualizada' sem ter chamado save_task_code é errado.\n"
         "- test_task_code e save_task_code recebem SEMPRE o código completo — não um diff.\n\n"
-        "Para listar, pausar ou deletar tarefas, use gerenciar_agenda normalmente."
+        "Para listar, pausar ou deletar tarefas, use gerenciar_agenda normalmente.\n\n"
+        "## RACIOCÍNIO OBRIGATÓRIO\n"
+        "SEMPRE que for chamar uma tool, você DEVE incluir na mesma resposta um texto curto "
+        "em linguagem natural explicando o que vai fazer e por quê, ANTES do bloco de função. "
+        "Exemplo: 'Vou calcular o período solicitado para obter as datas exatas.' "
+        "O texto e a chamada de tool devem vir juntos na mesma resposta. "
+        "NUNCA emita uma tool call sem texto explicativo."
     )
 
     orq_tools = [
@@ -1703,21 +1736,21 @@ def stream_multi_agent(query: str, session_id: str = "default"):
                         messages = [messages]
 
                     for msg in messages:
-                        thinking = _extract_thinking(msg)
-                        if thinking:
-                            event_queue.put({"type": "thinking", "text": thinking})
-
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                label = _TOOL_LABELS.get(tc["name"], f"⚙ {tc['name']}")
-                                event_queue.put({"type": "tool", "name": tc["name"], "label": label})
+                        _emit_agent_events(msg, event_queue.put)
 
                         if node_name == "orquestrador":
+                            tool_calls = getattr(msg, "tool_calls", None) or []
+                            fc = getattr(msg, "additional_kwargs", {}).get("function_call")
+                            has_tool = bool(tool_calls or fc)
                             text = _extract_text_content(msg)
-                            if text and not getattr(msg, "tool_calls", []):
+                            if text and not has_tool:
                                 event_queue.put({"type": "reply", "text": text})
 
         except Exception as e:
+            import traceback as _tb
+            import sys
+            print(f"\n[STREAM ERROR] {e}\n{_tb.format_exc()}", file=sys.stderr, flush=True)
+            logger.error("[STREAM ERROR] %s\n%s", e, _tb.format_exc())
             event_queue.put({"type": "error", "text": f"Erro interno: {e}"})
         finally:
             event_queue.put(None)  # sentinel — sinaliza fim do stream

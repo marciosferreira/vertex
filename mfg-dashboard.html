@@ -548,6 +548,7 @@
     border-top:1px solid rgba(56,189,248,.08); word-break:break-word;
   }
   .thinking-live.is-tool { color:#5b8fb9; }
+  .thinking-tool-inline { color:#5b8fb9; font-size:9px; letter-spacing:.06em; display:block; margin-top:3px; }
   .thinking-cursor {
     display:inline-block; width:5px; height:11px; background:var(--cyan);
     margin-left:3px; vertical-align:middle;
@@ -557,12 +558,12 @@
   .thinking-history { border-top:1px solid rgba(56,189,248,.08); display:none; max-height:220px; overflow-y:auto; }
   .thinking-wrap.open .thinking-history { display:block; }
   .thinking-step {
-    padding:5px 11px; color:var(--txt3); border-bottom:1px solid rgba(30,45,61,.5);
+    padding:5px 11px; color:#94a3b8; border-bottom:1px solid rgba(30,45,61,.5);
     line-height:1.6; word-break:break-word;
   }
   .thinking-step:last-child { border-bottom:none; }
-  .thinking-step-n { color:var(--txt3); margin-right:5px; opacity:.6; }
-  .thinking-step.is-tool { color:#5b8fb9; }
+  .thinking-step-n { color:#64748b; margin-right:5px; }
+  .thinking-step.is-tool { color:#7cb9e8; }
 
   /* CHART MODAL */
   .chart-modal-overlay {
@@ -1757,6 +1758,15 @@ function _updateThinkingLive(ids, text, isTool = false) {
   document.getElementById('chatMsgs').scrollTop = 99999;
 }
 
+function _updateThinkingLiveCombo(ids, thought, toolLabel) {
+  const live = document.getElementById(ids.live);
+  if (!live) return;
+  const preview = thought.length > 120 ? thought.slice(0, 120) + '…' : thought;
+  live.className = 'thinking-live';
+  live.innerHTML = `${preview}<br><span class="thinking-tool-inline">⚙ ${toolLabel}</span><span class="thinking-cursor"></span>`;
+  document.getElementById('chatMsgs').scrollTop = 99999;
+}
+
 function _addThinkingStep(ids, text, stepN, isTool = false) {
   const hist = document.getElementById(ids.hist);
   const cnt  = document.getElementById(ids.cnt);
@@ -2108,16 +2118,23 @@ async function sendChat() {
   const url = `${API_BASE}/chat/stream?` + new URLSearchParams({ message: text, session_id: _sessionId });
   const es = new EventSource(url);
 
+  let lastThought = '';
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data);
     if (ev.type === 'thinking') {
       hasEvents = true; stepN++;
+      lastThought = ev.text;
       _addThinkingStep(ids, ev.text, stepN, false);
       _updateThinkingLive(ids, ev.text, false);
     } else if (ev.type === 'tool') {
       hasEvents = true; stepN++;
       _addThinkingStep(ids, ev.label, stepN, true);
-      _updateThinkingLive(ids, ev.label, true);
+      if (lastThought) {
+        _updateThinkingLiveCombo(ids, lastThought, ev.label);
+        lastThought = '';
+      } else {
+        _updateThinkingLive(ids, ev.label, true);
+      }
     } else if (ev.type === 'artifact_preview') {
       hasEvents = true;
       _addArtifactToChat(ev.token, ev.task_id, false);

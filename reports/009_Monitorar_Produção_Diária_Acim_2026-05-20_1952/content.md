@@ -1,0 +1,1 @@
+Produção de hoje: 2793 unidades (Limite: 2000 unidades)
