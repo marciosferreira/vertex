@@ -428,7 +428,10 @@ async def list_chat_sessions(user_id: str = Query(default=None)):
             ]
             if not human_msgs:
                 continue
-            title = str(human_msgs[0].content)[:70].strip() or "(sem título)"
+            _tc = human_msgs[0].content
+            if isinstance(_tc, list):
+                _tc = " ".join(p.get("text", "") for p in _tc if isinstance(p, dict) and p.get("type") == "text")
+            title = str(_tc)[:70].strip() or "(sem título)"
             visible_count = sum(
                 1 for m in msgs
                 if isinstance(m, (HumanMessage, AIMessage))

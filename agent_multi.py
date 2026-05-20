@@ -205,7 +205,10 @@ _TOOL_LABELS: dict[str, str] = {
     "executar_sql":            "🗄️ Consultando banco de dados",
     "analisar_dataframe":      "🔢 Processando e analisando dados",
     "consultar_analista":      "🔍 Delegando ao sub-agente analista",
-    "rag":                     "📚 Consultando base de conhecimento",
+    "rag_dominio":             "📚 Consultando base de conhecimento (domínio)",
+    "rag_capacidades":         "📚 Consultando base de conhecimento (capacidades)",
+    "rag_arquitetura":         "📚 Consultando base de conhecimento (arquitetura)",
+    "rag_dados":               "📚 Consultando base de conhecimento (dados)",
     "get_current_datetime":    "🕐 Verificando data e hora",
     "gerar_pdf":               "📄 Gerando relatório PDF",
     "gerar_excel":             "📊 Gerando planilha Excel",
@@ -370,20 +373,63 @@ def _build_pdf(titulo: str, conteudo: str, session_id: str) -> str:
 
 # ── Tools do orquestrador ─────────────────────────────────────────────────────
 
-_RAG_CONTEXT = (Path(__file__).parent / "rag_context.md").read_text(encoding="utf-8")
+_RAG_DIR = Path(__file__).parent / "rag"
 
 
 @tool
-def rag() -> str:
-    """Retorna o contexto completo do domínio: o que cada painel significa, como OEE,
-    FPY, defeitos e manutenção são calculados, e como interpretar os dados do sistema.
+def rag_dominio() -> str:
+    """Retorna informações sobre o domínio industrial: definição dos KPIs (OEE, FPY,
+    downtime, taxa de defeito), o que cada painel do dashboard exibe, como interpretar
+    os indicadores, linhas de produção (Linha 1–4), modelos (PhoneX Pro/Lite/Ultra/Mini),
+    turnos (A/B/C) e granularidade dos dados (diária vs horária).
 
-    Use quando o usuário perguntar o que é um indicador, como algo é calculado,
-    o que significa um painel, ou pedir explicações sobre o domínio industrial.
-    Não é necessário consultar_analista para responder perguntas conceituais —
-    use esta tool primeiro.
+    Use quando o usuário perguntar: o que é OEE, como FPY é calculado, o que significa
+    downtime, o que mostra um painel específico, como interpretar um resultado,
+    qual linha produz qual modelo, qual horário é o turno C, etc.
     """
-    return _RAG_CONTEXT
+    return (_RAG_DIR / "dominio.md").read_text(encoding="utf-8")
+
+
+@tool
+def rag_capacidades() -> str:
+    """Retorna o catálogo completo de capacidades do agente: tipos de análise disponíveis,
+    exemplos de perguntas que podem ser feitas, como solicitar gráficos/tabelas/PDFs/Excel,
+    como criar relatórios periódicos agendados, como configurar monitores com alertas,
+    frequências suportadas e como gerenciar tarefas agendadas (listar, pausar, deletar, editar).
+
+    Use quando o usuário perguntar: o que você pode fazer, que tipo de análise é possível,
+    como agendar um relatório, como criar um alerta, quais frequências existem, como editar
+    uma tarefa, como funciona o agendamento, etc.
+    """
+    return (_RAG_DIR / "capacidades.md").read_text(encoding="utf-8")
+
+
+@tool
+def rag_arquitetura() -> str:
+    """Retorna a arquitetura técnica do sistema de agentes: como o orquestrador roteia
+    pedidos, como o sub-agente analista executa análises (read_skill → chamar_api →
+    analisar_dataframe), o catálogo de skills disponíveis, como o sub-agente de scheduling
+    gerencia tarefas, os dois modos de execução (LLM vs determinístico) e os métodos do ctx.
+
+    Use quando o usuário perguntar: como o sistema funciona internamente, quais skills
+    existem, como funciona o agendamento por baixo, o que é o modo determinístico,
+    o que é o sub-agente analista, como o orquestrador decide o que fazer, etc.
+    """
+    return (_RAG_DIR / "arquitetura.md").read_text(encoding="utf-8")
+
+
+@tool
+def rag_dados() -> str:
+    """Retorna a referência técnica de dados: endpoints da API REST com seus filtros
+    (from, to, shift, line), estrutura dos payloads e schema completo do banco SQLite
+    (tabelas production, defects, metrics, hourly_production, lines_status, alerts, kpis)
+    com colunas, tipos e descrições.
+
+    Use quando o usuário perguntar: quais endpoints existem, quais filtros a API aceita,
+    quais colunas tem a tabela de produção, qual o schema do banco, como cruzar tabelas,
+    quais campos estão disponíveis para análise, etc.
+    """
+    return (_RAG_DIR / "dados.md").read_text(encoding="utf-8")
 
 @tool
 def gerar_pdf(titulo: str, conteudo: str) -> str:
@@ -1249,7 +1295,11 @@ def _build_orchestrator(llm, checkpointer=None):
         "     'produção de hoje', 'análise de', 'compare', 'relatório de'.\n"
         "     → Chame calcular_periodo() + consultar_analista(). NÃO envolva gerenciar_agenda.\n\n"
         "  B) PERGUNTA CONCEITUAL — o usuário quer saber o que algo significa ou como é calculado.\n"
-        "     → Chame rag(). Responda diretamente sem buscar dados.\n\n"
+        "     → Chame a tool rag_* mais adequada ao tema da pergunta. Responda diretamente sem buscar dados.\n"
+        "       rag_dominio()      → KPIs, painéis, interpretação, linhas, turnos\n"
+        "       rag_capacidades()  → o que o agente pode fazer, agendamento, monitores\n"
+        "       rag_arquitetura()  → como o sistema funciona, sub-agentes, skills\n"
+        "       rag_dados()        → endpoints da API, schema do banco, colunas\n\n"
         "  C) AGENDAMENTO — o usuário quer CRIAR, EDITAR, LISTAR, PAUSAR ou DELETAR uma tarefa recorrente.\n"
         "     Palavras-chave obrigatórias: 'agendar', 'todo dia', 'toda semana', 'automaticamente',\n"
         "     'criar tarefa', 'monitor', 'me avise quando', 'editar tarefa [ID]'.\n"
@@ -1400,7 +1450,8 @@ def _build_orchestrator(llm, checkpointer=None):
     )
 
     orq_tools = [
-        get_current_datetime, get_dashboard_charts, calcular_periodo, consultar_analista, rag,
+        get_current_datetime, get_dashboard_charts, calcular_periodo, consultar_analista,
+        rag_dominio, rag_capacidades, rag_arquitetura, rag_dados,
         gerar_pdf, gerar_excel,
         gerenciar_agenda,
         set_task_instructions,

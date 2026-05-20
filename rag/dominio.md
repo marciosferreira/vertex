@@ -1,4 +1,4 @@
-# Contexto do Sistema MFG Control AI
+# Domínio industrial — MFG Control AI
 
 ## O que é este sistema
 
@@ -29,13 +29,13 @@ Cada linha produz exclusivamente seu modelo. Filtrar por modelo é equivalente a
 
 Exibidos no cabeçalho com filtros de período, turno e modelo:
 
-| KPI             | O que mostra                                                    |
-|-----------------|-----------------------------------------------------------------|
-| Produzido       | Total de unidades no período + % atingida da meta               |
-| First Pass Yield| FPY % do período com status OK ou Abaixo da meta (95%)          |
-| Taxa de defeito | % de unidades com defeito + contagens de scrap e retrabalho     |
-| OEE             | Eficiência global % com referência à meta de 85%                |
-| Downtime        | Minutos de paradas não planejadas no período                    |
+| KPI              | O que mostra                                                    |
+|------------------|-----------------------------------------------------------------|
+| Produzido        | Total de unidades no período + % atingida da meta               |
+| First Pass Yield | FPY % do período com status OK ou Abaixo da meta (95%)          |
+| Taxa de defeito  | % de unidades com defeito + contagens de scrap e retrabalho     |
+| OEE              | Eficiência global % com referência à meta de 85%                |
+| Downtime         | Minutos de paradas não planejadas no período                    |
 
 ## Painéis do dashboard
 
@@ -96,7 +96,6 @@ Gráfico misto com dois eixos Y mostrando o perfil intradiário de um turno.
 - **Produção** (barras azuis, eixo esquerdo): média de unidades produzidas por hora com barras de erro ±1 desvio padrão
 - **Meta/hora** (linha tracejada cinza, eixo esquerdo): meta média por hora
 - **Defeitos** (barras vermelhas, eixo direito): média de defeitos por hora com barras de erro ±1 desvio padrão
-- Tooltip mostra valor ± desvio padrão para produção e defeitos
 - Turno é obrigatório (A, B ou C) — cada turno cobre 8 horas
 - Filtros: período, turno (obrigatório), modelo
 
@@ -114,9 +113,8 @@ Barras agrupadas comparando a eficiência dos três turnos ao longo do período.
 
 Barras horizontais mostrando o volume de defeitos por tipo no período.
 
-- Categorias exibidas na ordem retornada pela API: Tela (display), Câmera, Bateria, Placa-mãe, Chassi / Carcaça, Conector USB, Outros
+- Categorias: Tela (display), Câmera, Bateria, Placa-mãe, Chassi / Carcaça, Conector USB, Outros
 - Cada categoria tem uma cor fixa (vermelho, laranja, roxo, azul, verde, amarelo, cinza)
-- Eixo X: quantidade de defeitos
 - Filtros: período, turno, modelo
 
 ### Tendência de defeitos
