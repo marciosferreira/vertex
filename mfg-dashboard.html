@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
 <script>
     mermaid.initialize({
-        startOnLoad: true,
+        startOnLoad: false,
         theme: 'dark',
         securityLevel: 'loose',
         flowchart: { nodeSpacing: 30, rankSpacing: 50, curve: 'basis' },
@@ -610,6 +610,33 @@
   /* clickable cursors */
   .ch-wrap canvas { cursor:zoom-in; }
   .msg-bubble img { cursor:zoom-in !important; }
+  /* ── Tab navigation ── */
+  .tab-nav {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 20px;
+    background: rgba(10,14,20,0.98); border-bottom: 1px solid var(--border);
+    position: sticky; top: 58px; z-index: 99;
+  }
+  .tab-btn {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase; font-weight: 600;
+    padding: 8px 20px; border: 1px solid transparent; border-radius: 6px;
+    background: none; color: var(--txt2); cursor: pointer;
+    transition: all .2s; white-space: nowrap; display: flex; align-items: center; gap: 7px;
+  }
+  .tab-btn:hover {
+    color: var(--txt);
+    background: rgba(56,189,248,0.06);
+    border-color: rgba(56,189,248,0.15);
+  }
+  .tab-btn.active {
+    color: #0a0e14;
+    background: var(--cyan);
+    border-color: var(--cyan);
+    box-shadow: 0 0 16px rgba(56,189,248,0.35);
+  }
+  .tab-btn.active i { color: #0a0e14; }
+
   /* ── Arquitetura section ── */
   .arq-section { font-family: 'Inter', sans-serif; background-color:#0B0F19; color:#e2e8f0; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0); background-size: 24px 24px; }
   .arq-inner { max-width: 100%; padding: 40px 48px 64px; display: flex; flex-direction: column; gap: 48px; }
@@ -620,8 +647,8 @@
   @media (max-width: 768px)  { .arq-grid-3 { grid-template-columns: 1fr; } .arq-grid-6 { grid-template-columns: repeat(2, 1fr); } }
   .arq-card { border: 1px solid #1e293b; border-radius: 12px; background: #0f1520; padding: 24px; position: relative; overflow: hidden; }
   .arq-card-dark { border: 1px solid #0f172a; border-radius: 12px; background: #0B0F19; padding: 16px; }
-  .mermaid-wrap { overflow-x: auto; }
-  .mermaid-wrap { overflow-x: auto; display: flex; justify-content: center; }
+  .mermaid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (min-width: 768px) { .mermaid-wrap { display: flex; justify-content: center; } }
   .mermaid svg { height: auto !important; min-width: 700px; background: transparent !important; }
   .mermaid svg > rect:first-child { fill: transparent !important; }
   .mermaid svg text { text-transform: none !important; font-size: 13px !important; }
@@ -687,6 +714,17 @@
     <span class="last-update" id="lastUpdate"></span>
   </div>
 </header>
+
+<nav class="tab-nav">
+  <button class="tab-btn active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">
+    <i class="fa-solid fa-gauge-high" style="margin-right:5px;"></i> Dashboard
+  </button>
+  <button class="tab-btn" id="tab-btn-arquitetura" onclick="switchTab('arquitetura')">
+    <i class="fa-solid fa-diagram-project" style="margin-right:5px;"></i> Arquitetura
+  </button>
+</nav>
+
+<div id="tab-panel-dashboard">
 <div id="appWrap">
 <div class="main-wrap">
 
@@ -1141,6 +1179,7 @@
 <div id="screenshotOverlay">
   <div id="selectionRect" style="display:none;"></div>
 </div>
+</div><!-- /#tab-panel-dashboard -->
 
 <div id="screenshotSpinner" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;">
   <div style="width:40px;height:40px;border:3px solid rgba(167,139,250,.3);border-top-color:#a78bfa;border-radius:50%;animation:spin .7s linear infinite;"></div>
@@ -2374,12 +2413,36 @@ document.addEventListener('click', e => {
 
 // ── START ─────────────────────────────────────────────
 initDashboard();
+
+// ── Tab switching ──────────────────────────────────────
+let _arqMermaidReady = false;
+function switchTab(name) {
+  const panels = ['dashboard', 'arquitetura'];
+  panels.forEach(p => {
+    const panel = document.getElementById('tab-panel-' + p);
+    const btn   = document.getElementById('tab-btn-' + p);
+    if (!panel || !btn) return;
+    const active = p === name;
+    panel.style.display = active ? '' : 'none';
+    btn.classList.toggle('active', active);
+  });
+  if (name === 'arquitetura' && !_arqMermaidReady) {
+    _arqMermaidReady = true;
+    const nodes = document.querySelectorAll('#tab-panel-arquitetura .mermaid');
+    if (typeof mermaid.run === 'function') {
+      mermaid.run({ nodes });
+    } else {
+      mermaid.init(undefined, nodes);
+    }
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 </script>
 
 <!-- ══════════════════════════════════════════════════════
      DIVISÓRIA — ARQUITETURA AGÊNTICA
      ══════════════════════════════════════════════════════ -->
-<div class="arq-section">
+<div class="arq-section" id="tab-panel-arquitetura" style="display:none">
 
     <!-- Divisória visual -->
     <div style="display:flex;align-items:center;gap:16px;padding:48px 48px 0;">
