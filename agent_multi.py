@@ -76,6 +76,16 @@ _current_session: contextvars.ContextVar[str] = contextvars.ContextVar(
     "mfg_session", default="default"
 )
 
+# Snapshot do dashboard enviado pelo browser antes de cada mensagem.
+# Chave: session_id, Valor: dict com charts e kpis.
+_chart_snapshots: dict[str, dict] = {}
+_cs_lock = threading.Lock()
+
+
+def set_chart_snapshot(session_id: str, data: dict) -> None:
+    """Chamado pelo endpoint POST /chart-snapshot para armazenar o estado atual do dashboard."""
+    with _cs_lock:
+        _chart_snapshots[session_id] = data
 
 
 def _tlog(tool: str, event: str, **kwargs) -> None:
@@ -524,6 +534,82 @@ def get_current_datetime() -> str:
     result = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     _tlog("get_current_datetime", "RETORNO", resultado=result)
     return result
+
+
+@tool
+def get_dashboard_charts() -> str:
+    """Retorna os dados dos gráficos e KPIs atualmente exibidos no dashboard do usuário.
+
+    Use esta tool quando o usuário perguntar sobre o que está vendo na tela,
+    mencionar valores, tendências ou comparações visíveis nos gráficos,
+    ou usar expressões como 'no dashboard', 'na tela', 'o que está aparecendo',
+    'o gráfico mostra', 'os KPIs', 'os alertas ativos'.
+    NÃO use para análises que exijam buscar dados históricos — use consultar_analista nesses casos.
+    """
+    session = _current_session.get()
+    with _cs_lock:
+        snapshot = _chart_snapshots.get(session)
+
+    if not snapshot:
+        return "Nenhum snapshot do dashboard disponível para esta sessão."
+
+    lines: list[str] = []
+
+    kpis = snapshot.get("kpis", [])
+    if kpis:
+        lines.append("=== KPIs ===")
+        for k in kpis:
+            badge = f" [{k.get('badge', '')}]" if k.get("badge") else ""
+            lines.append(f"  {k['label']}: {k['value']}{badge}")
+        lines.append("")
+
+    charts = snapshot.get("charts", {})
+    for chart_id, chart in charts.items():
+        title = chart.get("title", chart_id)
+        labels = chart.get("labels", [])
+        datasets = chart.get("datasets", [])
+        lines.append(f"=== {title} ===")
+        if labels:
+            lines.append(f"  Labels: {', '.join(str(l) for l in labels)}")
+        for ds in datasets:
+            ds_label = ds.get("label", "")
+            data_str = ", ".join(str(v) for v in ds.get("data", []))
+            lines.append(f"  {ds_label}: {data_str}")
+        lines.append("")
+
+    alerts = snapshot.get("alerts", [])
+    if alerts:
+        lines.append(f"=== Alertas ({len(alerts)} total) ===")
+        for a in alerts[:20]:
+            val = a.get("value")
+            thr = a.get("threshold")
+            ts = a.get("created_at", "")
+            detail = f" (valor: {val}, limiar: {thr})" if val is not None else ""
+            read_flag = " [lido]" if a.get("read") else " [novo]"
+            lines.append(f"  [{ts}]{read_flag} {a.get('message', '')}{detail}")
+    else:
+        lines.append("=== Alertas ===\n  Nenhum alerta ativo na tela.")
+    lines.append("")
+
+    artifacts = snapshot.get("artifacts", [])
+    if artifacts:
+        lines.append(f"=== Artifacts ({len(artifacts)} total) ===")
+        for a in artifacts:
+            lines.append(f"  [{a.get('type', '?')}] {a.get('label', a.get('id', ''))} — {a.get('created_at', '')}")
+    else:
+        lines.append("=== Artifacts ===\n  Nenhum artifact gerado.")
+    lines.append("")
+
+    tasks = snapshot.get("tasks", [])
+    if tasks:
+        lines.append(f"=== Tarefas Agendadas ({len(tasks)} total) ===")
+        for t in tasks:
+            lines.append(f"  [#{t.get('id', '?')}] {t.get('name', '')} — status: {t.get('status', '')} — schedule: {t.get('schedule', '')}")
+    else:
+        lines.append("=== Tarefas Agendadas ===\n  Nenhuma tarefa agendada.")
+
+    _tlog("get_dashboard_charts", "RETORNO", linhas=len(lines))
+    return "\n".join(lines) if lines else "Dashboard sem dados disponíveis."
 
 
 # ── Tools do sub-agente ───────────────────────────────────────────────────────
@@ -1170,6 +1256,28 @@ def _build_orchestrator(llm, checkpointer=None):
         "     → Siga o fluxo de agendamento detalhado abaixo.\n\n"
         "  D) PERGUNTA SIMPLES — data, hora, saudação, dúvida geral sem dados.\n"
         "     → Responda diretamente sem chamar nenhuma tool de dados.\n\n"
+        "  E) PERGUNTA SOBRE O DASHBOARD (texto ou imagem) — o usuário pergunta sobre o que está\n"
+        "     visível na tela: valores nos gráficos, KPIs, alertas, notificações, comparações entre\n"
+        "     linhas/turnos. Palavras-chave: 'na tela', 'no dashboard', 'o que aparece', 'o gráfico\n"
+        "     mostra', 'quantos alertas', 'quantas notificações', 'KPI'. Também se enquadra aqui\n"
+        "     qualquer mensagem que contenha uma imagem anexada pelo usuário.\n"
+        "     → Chame get_dashboard_charts() para obter os dados numéricos do dashboard.\n"
+        "     → Se a pergunta envolver o SIGNIFICADO de uma métrica (o que é FPY, como se calcula\n"
+        "       OEE, o que representa downtime), chame rag() em seguida para complementar.\n"
+        "     → NÃO chame consultar_analista — os dados relevantes já estão na tela.\n\n"
+        "## Análise de imagens do dashboard\n"
+        "Quando o usuário envia uma imagem junto com sua mensagem, trata-se de um recorte da\n"
+        "própria tela do dashboard — pode conter gráficos de produção, FPY, OEE, defeitos,\n"
+        "KPIs, alertas ou qualquer outro elemento visual do sistema de monitoramento industrial.\n"
+        "Analise visualmente o conteúdo da imagem e:\n"
+        "  1. Descreva o que está sendo exibido (tipo de gráfico, eixos, tendências, valores\n"
+        "     destacados, anomalias visíveis).\n"
+        "  2. Se precisar dos valores numéricos exatos por trás do gráfico, chame\n"
+        "     get_dashboard_charts() — ela retorna os dados brutos de todos os gráficos.\n"
+        "  3. Se precisar explicar o significado de uma métrica visível (FPY, OEE, downtime,\n"
+        "     etc.), chame rag() para buscar a definição precisa do sistema.\n"
+        "  4. Combine o que você vê na imagem com os dados retornados pelas tools para dar\n"
+        "     uma resposta completa e contextualizada.\n\n"
         "REGRA CRÍTICA: na dúvida entre A e C, escolha A. Nunca inicie um fluxo de agendamento\n"
         "a menos que o usuário tenha usado explicitamente palavras de agendamento (categoria C).\n\n"
         "## Agendamento de tarefas — fluxo obrigatório ao CRIAR uma tarefa nova\n"
@@ -1292,7 +1400,7 @@ def _build_orchestrator(llm, checkpointer=None):
     )
 
     orq_tools = [
-        get_current_datetime, calcular_periodo, consultar_analista, rag,
+        get_current_datetime, get_dashboard_charts, calcular_periodo, consultar_analista, rag,
         gerar_pdf, gerar_excel,
         gerenciar_agenda,
         set_task_instructions,
@@ -1401,6 +1509,19 @@ def init_multi_agent(project: str, location: str, model_name: str) -> None:
         logger.warning("Falha ao inicializar multi-agente:\n%s", traceback.format_exc())
 
 
+def _build_human_message(query: str, session_id: str) -> HumanMessage:
+    """Constrói HumanMessage simples ou multimodal se houver imagens no snapshot."""
+    with _cs_lock:
+        snapshot = _chart_snapshots.get(session_id, {})
+    images = snapshot.get("images_b64") or []
+    if not images:
+        return HumanMessage(content=query)
+    parts: list = [{"type": "text", "text": query or "Analise as imagens anexadas."}]
+    for b64 in images:
+        parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    return HumanMessage(content=parts)
+
+
 def invoke_multi_agent(query: str, session_id: str = "default") -> str:
     """Executa o orquestrador com a query do usuário e retorna a resposta final.
 
@@ -1414,7 +1535,7 @@ def invoke_multi_agent(query: str, session_id: str = "default") -> str:
         _namespaces.pop(session_id, None)
         _ns_last_access.pop(session_id, None)
     resultado = _orchestrator_graph.invoke(
-        {"messages": [HumanMessage(content=query)]},
+        {"messages": [_build_human_message(query, session_id)]},
         config={"configurable": {"thread_id": session_id}, "recursion_limit": 50},
     )
     return resultado["messages"][-1].content
@@ -1450,12 +1571,14 @@ def stream_multi_agent(query: str, session_id: str = "default"):
 
     config = {"configurable": {"thread_id": session_id}, "recursion_limit": 50}
 
+    human_message = _build_human_message(query, session_id)
+
     def _run_orchestrator():
         # ContextVar não se propaga para threading.Thread — precisa setar explicitamente.
         _current_session.set(session_id)
         try:
             for chunk in _orchestrator_graph.stream(
-                {"messages": [HumanMessage(content=query)]},
+                {"messages": [human_message]},
                 config=config,
                 stream_mode="updates",
             ):

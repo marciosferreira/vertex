@@ -352,12 +352,16 @@
   .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); margin-top:5px; padding:0 4px; }
 
   .chat-input-wrap {
-    padding:12px 12px 14px; border-top:1px solid rgba(56,189,248,.1);
+    padding:12px 12px 10px; border-top:1px solid rgba(56,189,248,.1);
     background:linear-gradient(0deg,#101d33 0%,#0d1626 100%);
-    display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
+    display:flex; flex-direction:column; gap:8px; flex-shrink:0;
+  }
+  .chat-actions {
+    display:flex; align-items:center; justify-content:flex-end; gap:8px;
+    padding-bottom:4px;
   }
   .chat-input {
-    flex:1; background:#141c27; border:1px solid var(--border);
+    width:100%; background:#141c27; border:1px solid var(--border);
     color:var(--txt); font-family:'Inter',sans-serif; font-size:12.5px;
     padding:9px 12px; resize:none; outline:none; line-height:1.5;
     max-height:120px; overflow-y:auto; border-radius:10px;
@@ -377,6 +381,48 @@
   }
   .chat-send:hover { background:#7dd3fc; box-shadow:0 4px 16px rgba(56,189,248,.45); }
   .chat-send:disabled { opacity:.3; cursor:not-allowed; box-shadow:none; }
+  .chat-screenshot {
+    width:36px; height:36px; flex-shrink:0; background:#1e293b;
+    border:1px solid rgba(167,139,250,.25); color:#a78bfa; font-size:15px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all .2s; border-radius:10px;
+  }
+  .chat-screenshot:hover { background:rgba(167,139,250,.1); border-color:rgba(167,139,250,.5); }
+  .chat-screenshot:disabled { opacity:.3; cursor:not-allowed; }
+
+  /* Overlay de seleção de área */
+  #screenshotOverlay {
+    display:none; position:fixed; inset:0; z-index:9999;
+    cursor:crosshair; user-select:none;
+  }
+  #screenshotOverlay.active { display:block; }
+  #selectionRect {
+    position:fixed; border:2px solid #a78bfa;
+    background:rgba(167,139,250,.12); pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(0,0,0,.35);
+  }
+
+  /* Preview de imagens na barra de ações */
+  #imagePreviewWrap {
+    display:none; align-items:center; gap:6px; flex:1;
+  }
+  #imagePreviewWrap.visible { display:flex; }
+  .img-thumb-wrap { position:relative; flex-shrink:0; }
+  .img-thumb {
+    height:36px; width:auto; max-width:60px; object-fit:cover;
+    border-radius:6px; border:1px solid rgba(167,139,250,.5);
+    cursor:pointer; box-shadow:0 0 0 2px rgba(167,139,250,.15); display:block;
+  }
+  .img-thumb-remove {
+    position:absolute; top:-5px; right:-5px;
+    background:#ef4444; border:none; color:#fff;
+    font-size:9px; font-weight:700; cursor:pointer;
+    border-radius:99px; width:14px; height:14px;
+    display:flex; align-items:center; justify-content:center;
+    line-height:1; padding:0;
+  }
+  .img-thumb-remove:hover { background:#b91c1c; }
+
   .chat-mic {
     width:36px; height:36px; flex-shrink:0; background:#1e293b;
     border:1px solid rgba(56,189,248,.25); color:var(--cyan); font-size:15px;
@@ -1004,8 +1050,17 @@
         <audio id="audioPlayer" controls></audio>
         <button class="audio-discard" id="audioDiscardBtn" onclick="discardAudio()" title="Descartar gravação">✕</button>
       </div>
-      <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
-      <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
+      <div class="chat-actions">
+        <div id="imagePreviewWrap"></div>
+        <button class="chat-screenshot" id="chatScreenshotBtn" onclick="startScreenshot()" title="Selecionar área da tela">📷</button>
+        <button class="chat-mic" id="chatMicBtn" onclick="toggleRecording()" title="Gravar voz">🎤</button>
+        <button class="chat-send" id="chatSendBtn" onclick="handleSend()">↑</button>
+      </div>
+    </div>
+
+    <!-- Overlay de seleção de área da tela -->
+    <div id="screenshotOverlay">
+      <div id="selectionRect" style="display:none;"></div>
     </div>
     <div class="chat-hist-panel" id="chatHistPanel">
       <div class="chat-hist-head">
@@ -1682,18 +1737,250 @@ function _markLastArtifactSaved() {
   }
 }
 
+// ── Dashboard snapshot ────────────────────────────────
+
+async function getChartSnapshot() {
+  const snapshot = { charts: {}, kpis: [], alerts: [], images_b64: [..._pendingImages] };
+
+  // Gráficos Chart.js — exclui qualquer chart dentro da seção de arquitetura
+  for (const [id, chart] of Object.entries(charts)) {
+    const canvas = document.getElementById(id);
+    if (!canvas || canvas.closest('.arq-section')) continue;
+    const cardTitle = canvas.closest('.card')?.querySelector('.card-title')?.textContent?.trim() ?? id;
+    snapshot.charts[id] = {
+      title: cardTitle,
+      labels: chart.data.labels ?? [],
+      datasets: (chart.data.datasets ?? []).map(ds => ({
+        label: ds.label ?? '',
+        data: ds.data ?? [],
+      })),
+    };
+  }
+
+  // KPIs do dashboard
+  document.querySelectorAll('#kpiRow .kpi').forEach(el => {
+    const label = el.querySelector('.kpi-lbl')?.textContent?.trim() ?? '';
+    const value = el.querySelector('.kpi-val')?.textContent?.trim() ?? '';
+    const badge = el.querySelector('.badge')?.textContent?.trim() ?? '';
+    if (label) snapshot.kpis.push({ label, value, badge });
+  });
+
+  // Alertas visíveis para este usuário — mesma fonte que o painel de alertas
+  try {
+    const res = await fetch(`${API_BASE}/alerts?all=true&user_id=${_userId}`);
+    const alerts = await res.json();
+    snapshot.alerts = (alerts || []).map(a => ({
+      message: a.message ?? '',
+      value: a.value ?? null,
+      threshold: a.threshold ?? null,
+      created_at: a.created_at ?? '',
+      read: a.read ?? false,
+    }));
+  } catch (_) { /* não bloqueia se falhar */ }
+
+  // Artifacts — sem conteúdo, apenas metadados descritivos
+  try {
+    const src = _allArtifacts?.length ? _allArtifacts : await fetch('/artifacts').then(r => r.json());
+    snapshot.artifacts = (src || [])
+      .filter(a => !a.session_id?.startsWith('test_'))
+      .map(a => ({ id: a.id, type: a.type, label: a.label ?? a.filename ?? a.id, created_at: a.created_at ?? '' }));
+  } catch (_) { /* não bloqueia se falhar */ }
+
+  // Tarefas agendadas — status e nome
+  try {
+    const res = await fetch(`${API_BASE}/tasks?user_id=${_userId}`);
+    const tasks = await res.json();
+    snapshot.tasks = (tasks || [])
+      .filter(t => t.status !== 'cancelled')
+      .map(t => ({ id: t.id, name: t.name ?? '', status: t.status ?? '', schedule: t.schedule ?? '' }));
+  } catch (_) { /* não bloqueia se falhar */ }
+
+  return snapshot;
+}
+
+async function _postChartSnapshot() {
+  try {
+    const snapshot = await getChartSnapshot();
+    await fetch(`${API_BASE}/chart-snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: _sessionId, snapshot }),
+    });
+  } catch (_) { /* não bloqueia o chat se falhar */ }
+}
+
+// ── Screenshot / seleção de área ─────────────────────
+
+let _pendingImages  = [];    // base64 das imagens capturadas (máx 3)
+let _capturedFrame  = null;  // canvas com o frame completo da aba
+let _frameScale     = 1;     // relação vídeo px / CSS px
+let _screenStream   = null;  // MediaStream mantido entre capturas
+let _screenVideo    = null;  // <video> reutilizado
+
+(function() {
+  let _startX = 0, _startY = 0, _dragging = false;
+  const overlay = () => document.getElementById('screenshotOverlay');
+  const selRect  = () => document.getElementById('selectionRect');
+
+  // ── 1. Captura frame — pede permissão só na 1ª vez ───
+  async function _grabFrame() {
+    // Se o stream morreu (usuário revogou), limpa
+    if (_screenStream && !_screenStream.active) {
+      _screenStream = null;
+      _screenVideo  = null;
+    }
+
+    // Pede permissão só se não tem stream ativo
+    if (!_screenStream) {
+      _screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser' },
+        preferCurrentTab: true,
+      });
+      _screenVideo = document.createElement('video');
+      _screenVideo.muted = true;
+      _screenVideo.srcObject = _screenStream;
+      await new Promise(res => { _screenVideo.onloadedmetadata = res; });
+      await _screenVideo.play();
+      _frameScale = _screenVideo.videoWidth / window.innerWidth;
+
+      // Limpa referências quando o usuário para o compartilhamento
+      _screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+        _screenStream = null;
+        _screenVideo  = null;
+      });
+    }
+
+    // Aguarda frame estável e retorna canvas com snapshot atual
+    await new Promise(res => setTimeout(res, 80));
+    const fc = document.createElement('canvas');
+    fc.width  = _screenVideo.videoWidth;
+    fc.height = _screenVideo.videoHeight;
+    fc.getContext('2d').drawImage(_screenVideo, 0, 0);
+    return fc;
+  }
+
+  window.startScreenshot = async function() {
+    try {
+      _capturedFrame = await _grabFrame();
+      overlay().classList.add('active');
+    } catch (e) {
+      if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
+    }
+  };
+
+  // ── 2. Desenha retângulo de seleção ───────────────────
+  function _updateRect(x1, y1, x2, y2) {
+    const left  = Math.min(x1, x2), top    = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1), height = Math.abs(y2 - y1);
+    selRect().style.cssText =
+      `display:block;left:${left}px;top:${top}px;width:${width}px;height:${height}px;`;
+  }
+
+  document.addEventListener('mousedown', e => {
+    if (!overlay().classList.contains('active')) return;
+    e.preventDefault();
+    _dragging = true;
+    _startX = e.clientX; _startY = e.clientY;
+    _updateRect(_startX, _startY, _startX, _startY);
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!_dragging) return;
+    _updateRect(_startX, _startY, e.clientX, e.clientY);
+  });
+
+  // ── 3. Recorta o frame no mouseup ─────────────────────
+  document.addEventListener('mouseup', e => {
+    if (!_dragging) return;
+    _dragging = false;
+
+    const x = Math.min(_startX, e.clientX);
+    const y = Math.min(_startY, e.clientY);
+    const w = Math.abs(e.clientX - _startX);
+    const h = Math.abs(e.clientY - _startY);
+
+    overlay().classList.remove('active');
+    selRect().style.display = 'none';
+
+    if (w < 10 || h < 10 || !_capturedFrame) return;
+
+    const s = _frameScale;
+    const crop = document.createElement('canvas');
+    crop.width  = Math.round(w * s);
+    crop.height = Math.round(h * s);
+    crop.getContext('2d').drawImage(
+      _capturedFrame,
+      Math.round((x + window.scrollX) * s), Math.round((y + window.scrollY) * s),
+      Math.round(w * s), Math.round(h * s),
+      0, 0, crop.width, crop.height
+    );
+
+    if (_pendingImages.length >= 3) {
+      alert('Máximo de 3 imagens por mensagem.');
+      return;
+    }
+    _pendingImages.push(crop.toDataURL('image/png').split(',')[1]);
+    _renderImagePreviews();
+    document.getElementById('chatInput').focus();
+  });
+
+  // ESC cancela
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay().classList.contains('active')) {
+      overlay().classList.remove('active');
+      selRect().style.display = 'none';
+      _dragging = false;
+    }
+  });
+})();
+
+function _renderImagePreviews() {
+  const wrap = document.getElementById('imagePreviewWrap');
+  wrap.innerHTML = _pendingImages.map((b64, i) => `
+    <div class="img-thumb-wrap">
+      <img class="img-thumb" src="data:image/png;base64,${b64}"
+           onclick="_openImagePreview(${i})" title="Ver imagem ${i+1}"/>
+      <button class="img-thumb-remove" onclick="_removePendingImage(${i})" title="Remover">✕</button>
+    </div>`).join('');
+  wrap.classList.toggle('visible', _pendingImages.length > 0);
+}
+
+window._removePendingImage = function(i) {
+  _pendingImages.splice(i, 1);
+  _renderImagePreviews();
+};
+
+window._openImagePreview = function(i) {
+  const win = window.open();
+  win.document.write(`<img src="data:image/png;base64,${_pendingImages[i]}" style="max-width:100%">`);
+};
+
+// compatibilidade com chamadas antigas
+window.removePendingImage = function() { _pendingImages = []; _renderImagePreviews(); };
+
 // ── sendChat com EventSource ──────────────────────────
 
-function sendChat() {
+async function sendChat() {
   const input = document.getElementById('chatInput');
   const btn   = document.getElementById('chatSendBtn');
   const text  = input.value.trim();
-  if (!text || btn.disabled) return;
+  if ((!text && !_pendingImages.length) || btn.disabled) return;
 
-  _addMsg('user', text.replace(/</g, '&lt;'));
+  // Mostra mensagem do usuário (com miniaturas se houver imagens)
+  let userHtml = text ? text.replace(/</g, '&lt;') : '';
+  if (_pendingImages.length) {
+    userHtml += '<br>' + _pendingImages.map(b64 =>
+      `<img src="data:image/png;base64,${b64}" style="max-height:100px;border-radius:6px;margin-top:6px;margin-right:4px;border:1px solid #1e293b;">`
+    ).join('');
+  }
+  _addMsg('user', userHtml);
+
   input.value = '';
   input.style.height = 'auto';
   btn.disabled = true;
+
+  await _postChartSnapshot();
+  removePendingImage();
 
   const ids = _addThinkingMsg();
   let stepN = 0;
@@ -2280,6 +2567,40 @@ graph TD
                     <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
                     <p class="text-xs text-slate-400 leading-relaxed">Lazy-loading estratégico restringe a injeção do prompt de sistema apenas à skill correlacionada ao escopo.</p>
                 </div>
+            </div>
+        </section>
+
+        <!-- Contexto Visual -->
+        <section class="border border-purple-500/20 rounded-xl bg-[#0f0a1a] p-6 relative overflow-hidden">
+            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-camera text-[9rem]"></i></div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-center justify-center text-purple-400 shrink-0"><i class="fa-solid fa-camera"></i></div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Contexto Visual — Snapshot do Dashboard</h3>
+                    <span class="text-xs font-mono text-slate-400">Multimodal · até 3 imagens por mensagem · Gemini 2.5 Flash Vision</span>
+                </div>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed mb-5">O agente não depende apenas de dados estruturados — ele também <strong class="text-white">enxerga o que está na tela</strong>. O usuário seleciona qualquer área do dashboard com um clique e arraste; a captura é enviada junto com a mensagem e o modelo analisa o conteúdo visual diretamente, identificando tendências, anomalias e padrões nos gráficos.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-camera-retro"></i> 1. Captura nativa</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Usa a API <code class="text-purple-300">getDisplayMedia</code> do browser — captura o frame real da aba, incluindo fontes, oklch e recursos externos. Zero dependências externas, zero CORS.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-crop-simple"></i> 2. Seleção livre</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Overlay com crosshair permite selecionar qualquer retângulo da tela com arrastar e soltar. Até 3 recortes por mensagem — o stream de vídeo é mantido aberto para não pedir permissão repetidamente.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-eye"></i> 3. Análise multimodal</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">As imagens são enviadas como partes de uma <code class="text-purple-300">HumanMessage</code> multimodal ao Gemini. O agente pode complementar a análise visual com dados numéricos exatos via <code class="text-purple-300">get_dashboard_charts()</code>.</p>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-4 flex flex-wrap gap-3 items-center">
+                <span class="text-xs font-mono text-slate-500 uppercase tracking-wider mr-2">Comportamento do agente:</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📷 Interpreta gráficos visualmente</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🔢 Busca dados exatos via tool</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📖 Explica métricas via RAG</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🖼️ Até 3 recortes por mensagem</span>
             </div>
         </section>
 

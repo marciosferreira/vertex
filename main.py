@@ -48,7 +48,7 @@ except ImportError:
 import json
 import threading
 from sse_starlette.sse import EventSourceResponse
-from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent
+from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent, set_chart_snapshot
 from scheduler.daemon import scheduler_loop, _execute_task
 import chart_store as cs
 
@@ -264,6 +264,18 @@ def build_filters(
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
+
+
+class ChartSnapshotRequest(BaseModel):
+    session_id: str
+    snapshot: dict
+
+
+@app.post("/chart-snapshot")
+async def chart_snapshot(req: ChartSnapshotRequest):
+    """Recebe o snapshot atual dos gráficos do dashboard e armazena por session_id."""
+    set_chart_snapshot(req.session_id, req.snapshot)
+    return {"ok": True}
 
 
 @app.post("/chat")
