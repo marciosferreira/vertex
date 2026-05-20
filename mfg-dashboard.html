@@ -1142,6 +1142,11 @@
   <div id="selectionRect" style="display:none;"></div>
 </div>
 
+<div id="screenshotSpinner" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;">
+  <div style="width:40px;height:40px;border:3px solid rgba(167,139,250,.3);border-top-color:#a78bfa;border-radius:50%;animation:spin .7s linear infinite;"></div>
+  <span style="color:#e2e8f0;font-size:13px;font-family:Inter,sans-serif;">Capturando...</span>
+</div>
+
 <!-- Chart Modal -->
 <div class="chart-modal-overlay hidden" id="chartModal" onclick="closeChartModal(event)">
   <div class="chart-modal-box" id="chartModalBox">
@@ -1900,8 +1905,8 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     if (!navigator.mediaDevices?.getDisplayMedia) {
       _frameScale = window.devicePixelRatio || 1;
       const canvas = await htmlToImage.toCanvas(document.body, {
-        pixelRatio: _frameScale,
-        skipFonts: false,
+        pixelRatio: Math.min(_frameScale, 1.5), // limita para não gerar canvas gigante
+        skipFonts: true,  // evita buscar Google Fonts + Font Awesome pela rede (maior gargalo)
         cacheBust: false,
       });
       return canvas;
@@ -2026,13 +2031,17 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
     if (_isMobile) {
       // Mobile: captura agora (overlay já fechado, chat ainda fechado)
+      const spinner = document.getElementById('screenshotSpinner');
+      spinner.style.display = 'flex';
       try {
         _capturedFrame = await _grabFrame();
       } catch (e) {
+        spinner.style.display = 'none';
         _reopenChat();
         if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
         return;
       }
+      spinner.style.display = 'none';
     }
 
     _reopenChat();
