@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>MFG Control — Dashboard de Produção</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -204,7 +204,7 @@
     position:fixed; right:0; top:var(--hdr-h); bottom:0;
     width: var(--chat-w);
     max-width: calc(100vw - 60px);
-    height:calc(100vh - var(--hdr-h));
+    height:calc(100dvh - var(--hdr-h));
     background:#0d1626; border-left:1px solid var(--border);
     display:flex; flex-direction:column;
     box-shadow:-6px 0 32px rgba(0,0,0,.5);
@@ -414,7 +414,8 @@
   .msg-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--txt3); margin-top:5px; padding:0 4px; }
 
   .chat-input-wrap {
-    padding:12px 12px 10px; border-top:1px solid rgba(56,189,248,.1);
+    padding:12px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top:1px solid rgba(56,189,248,.1);
     background:linear-gradient(0deg,#101d33 0%,#0d1626 100%);
     display:flex; flex-direction:column; gap:8px; flex-shrink:0;
   }
@@ -2363,7 +2364,7 @@ document.getElementById('chatInput').addEventListener('input', function() {
     root.style.setProperty('--hdr-h', h + 'px');
     panels.forEach(p => {
       p.style.top = h + 'px';
-      p.style.height = 'calc(100vh - ' + h + 'px)';
+      p.style.height = 'calc(100dvh - ' + h + 'px)';
     });
   }
 
