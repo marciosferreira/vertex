@@ -2530,6 +2530,40 @@ graph TD
             </div>
         </section>
 
+        <!-- Contexto Visual -->
+        <section class="border border-purple-500/20 rounded-xl bg-[#0f0a1a] p-6 relative overflow-hidden">
+            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-camera text-[9rem]"></i></div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-center justify-center text-purple-400 shrink-0"><i class="fa-solid fa-camera"></i></div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Contexto Visual — Snapshot do Dashboard</h3>
+                    <span class="text-xs font-mono text-slate-400">Multimodal · até 3 imagens por mensagem · Gemini 2.5 Flash Vision</span>
+                </div>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed mb-5">O agente não depende apenas de dados estruturados — ele também <strong class="text-white">enxerga o que está na tela</strong>. O usuário seleciona qualquer área do dashboard com um clique e arraste; a captura é enviada junto com a mensagem e o modelo analisa o conteúdo visual diretamente, identificando tendências, anomalias e padrões nos gráficos.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-camera-retro"></i> 1. Captura nativa</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Usa a API <code class="text-purple-300">getDisplayMedia</code> do browser — captura o frame real da aba, incluindo fontes, oklch e recursos externos. Zero dependências externas, zero CORS.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-crop-simple"></i> 2. Seleção livre</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Overlay com crosshair permite selecionar qualquer retângulo da tela com arrastar e soltar. Até 3 recortes por mensagem — o stream de vídeo é mantido aberto para não pedir permissão repetidamente.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-eye"></i> 3. Análise multimodal</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">As imagens são enviadas como partes de uma <code class="text-purple-300">HumanMessage</code> multimodal ao Gemini. O agente pode complementar a análise visual com dados numéricos exatos via <code class="text-purple-300">get_dashboard_charts()</code>.</p>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-4 flex flex-wrap gap-3 items-center">
+                <span class="text-xs font-mono text-slate-500 uppercase tracking-wider mr-2">Comportamento do agente:</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📷 Interpreta gráficos visualmente</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🔢 Busca dados exatos via tool</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📖 Explica métricas via RAG</span>
+                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🖼️ Até 3 recortes por mensagem</span>
+            </div>
+        </section>
+
         <!-- Por que importa -->
         <section class="border border-slate-800 rounded-xl bg-[#0F1423] p-6">
             <div class="mb-6">
@@ -2567,40 +2601,6 @@ graph TD
                     <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
                     <p class="text-xs text-slate-400 leading-relaxed">Lazy-loading estratégico restringe a injeção do prompt de sistema apenas à skill correlacionada ao escopo.</p>
                 </div>
-            </div>
-        </section>
-
-        <!-- Contexto Visual -->
-        <section class="border border-purple-500/20 rounded-xl bg-[#0f0a1a] p-6 relative overflow-hidden">
-            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-camera text-[9rem]"></i></div>
-            <div class="flex items-center gap-3 mb-4">
-                <div class="h-10 w-10 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-center justify-center text-purple-400 shrink-0"><i class="fa-solid fa-camera"></i></div>
-                <div>
-                    <h3 class="text-lg font-bold text-white">Contexto Visual — Snapshot do Dashboard</h3>
-                    <span class="text-xs font-mono text-slate-400">Multimodal · até 3 imagens por mensagem · Gemini 2.5 Flash Vision</span>
-                </div>
-            </div>
-            <p class="text-slate-300 text-sm leading-relaxed mb-5">O agente não depende apenas de dados estruturados — ele também <strong class="text-white">enxerga o que está na tela</strong>. O usuário seleciona qualquer área do dashboard com um clique e arraste; a captura é enviada junto com a mensagem e o modelo analisa o conteúdo visual diretamente, identificando tendências, anomalias e padrões nos gráficos.</p>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
-                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-camera-retro"></i> 1. Captura nativa</div>
-                    <p class="text-xs text-slate-400 leading-relaxed">Usa a API <code class="text-purple-300">getDisplayMedia</code> do browser — captura o frame real da aba, incluindo fontes, oklch e recursos externos. Zero dependências externas, zero CORS.</p>
-                </div>
-                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
-                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-crop-simple"></i> 2. Seleção livre</div>
-                    <p class="text-xs text-slate-400 leading-relaxed">Overlay com crosshair permite selecionar qualquer retângulo da tela com arrastar e soltar. Até 3 recortes por mensagem — o stream de vídeo é mantido aberto para não pedir permissão repetidamente.</p>
-                </div>
-                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
-                    <div class="text-purple-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-eye"></i> 3. Análise multimodal</div>
-                    <p class="text-xs text-slate-400 leading-relaxed">As imagens são enviadas como partes de uma <code class="text-purple-300">HumanMessage</code> multimodal ao Gemini. O agente pode complementar a análise visual com dados numéricos exatos via <code class="text-purple-300">get_dashboard_charts()</code>.</p>
-                </div>
-            </div>
-            <div class="border-t border-slate-800 pt-4 flex flex-wrap gap-3 items-center">
-                <span class="text-xs font-mono text-slate-500 uppercase tracking-wider mr-2">Comportamento do agente:</span>
-                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📷 Interpreta gráficos visualmente</span>
-                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🔢 Busca dados exatos via tool</span>
-                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">📖 Explica métricas via RAG</span>
-                <span class="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-mono">🖼️ Até 3 recortes por mensagem</span>
             </div>
         </section>
 
