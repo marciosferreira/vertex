@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
     mermaid.initialize({
         startOnLoad: true,
@@ -1885,28 +1886,36 @@ let _capturedFrame  = null;  // canvas com o frame completo da aba
 let _frameScale     = 1;     // relação vídeo px / CSS px
 let _screenStream   = null;  // MediaStream mantido entre capturas (evita pedir permissão repetida)
 
-// Mostra o botão de screenshot apenas em browsers que suportam getDisplayMedia (desktop)
-if (navigator.mediaDevices?.getDisplayMedia) {
-  document.getElementById('chatScreenshotBtn').style.display = '';
-}
+// Mostra o botão sempre — desktop usa getDisplayMedia, mobile usa html2canvas como fallback
+document.getElementById('chatScreenshotBtn').style.display = '';
 
 (function() {
   let _startX = 0, _startY = 0, _dragging = false;
   const overlay = () => document.getElementById('screenshotOverlay');
   const selRect  = () => document.getElementById('selectionRect');
 
-  // ── 1. Captura frame — reutiliza stream, cria video novo a cada vez ───
+  // ── 1. Captura frame — getDisplayMedia em desktop, html2canvas em mobile ───
   async function _grabFrame() {
-    // Se o stream morreu (usuário revogou), limpa
+    // Fallback html2canvas para mobile (sem getDisplayMedia)
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      _frameScale = window.devicePixelRatio || 1;
+      const canvas = await html2canvas(document.body, {
+        scale: _frameScale,
+        useCORS: true,
+        allowTaint: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: document.documentElement.scrollWidth,
+        windowHeight: document.documentElement.scrollHeight,
+      });
+      return canvas;
+    }
+
+    // Desktop: usa getDisplayMedia (captura nativa da aba)
     if (_screenStream && !_screenStream.active) {
       _screenStream = null;
     }
-
-    // Pede permissão só se não tem stream ativo
     if (!_screenStream) {
-      if (!navigator.mediaDevices?.getDisplayMedia) {
-        throw Object.assign(new Error('Captura de tela não é suportada neste dispositivo/browser.'), { name: 'NotSupportedError' });
-      }
       _screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' },
         preferCurrentTab: true,
@@ -1916,7 +1925,6 @@ if (navigator.mediaDevices?.getDisplayMedia) {
       });
     }
 
-    // Cria video limpo a cada captura — evita estado stale do elemento reutilizado
     const video = document.createElement('video');
     video.muted = true;
     video.srcObject = _screenStream;
@@ -1924,7 +1932,6 @@ if (navigator.mediaDevices?.getDisplayMedia) {
     await video.play();
     _frameScale = video.videoWidth / window.innerWidth;
 
-    // Aguarda N frames consecutivos — o 1º frame pode ser preto enquanto o pipeline inicializa
     function waitFrames(n) {
       return new Promise(res => {
         if ('requestVideoFrameCallback' in video) {
@@ -1933,12 +1940,11 @@ if (navigator.mediaDevices?.getDisplayMedia) {
           video.requestVideoFrameCallback(tick);
         } else {
           const check = () => video.readyState >= 2 ? res() : setTimeout(check, 30);
-          setTimeout(check, n * 40); // ~40ms por frame a 25fps
+          setTimeout(check, n * 40);
         }
       });
     }
 
-    // Tenta capturar, verifica se o canvas está em branco, e repete até 3x
     function isBlank(canvas) {
       const d = canvas.getContext('2d').getImageData(0, 0, Math.min(canvas.width, 64), Math.min(canvas.height, 64)).data;
       for (let i = 0; i < d.length; i += 4) if (d[i] | d[i+1] | d[i+2]) return false;
@@ -1947,7 +1953,7 @@ if (navigator.mediaDevices?.getDisplayMedia) {
 
     let fc, attempt = 0;
     do {
-      await waitFrames(attempt === 0 ? 2 : 1); // 2 frames na 1ª tentativa, 1 nas demais
+      await waitFrames(attempt === 0 ? 2 : 1);
       fc = document.createElement('canvas');
       fc.width  = video.videoWidth;
       fc.height = video.videoHeight;
@@ -1979,8 +1985,7 @@ if (navigator.mediaDevices?.getDisplayMedia) {
       overlay().classList.add('active');
     } catch (e) {
       _reopenChat();
-      if (e.name === 'NotSupportedError') alert(e.message);
-      else if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
+      if (e.name !== 'NotAllowedError') alert('Erro ao capturar tela: ' + e.message);
     }
   };
 
