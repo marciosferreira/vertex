@@ -951,8 +951,39 @@ def _build_sub_agent(llm):
         "    ex: 'DataFrame `producao` disponível no namespace com 30 linhas.'\n"
         "  - AMBOS   → gráfico em uma chamada de analisar_dataframe, tabela em outra.\n"
         "  Se não houver prefixo, padrão é GRAFICO.\n"
+        "- PRINT ANTES DO GRÁFICO: no script que gera um gráfico, sempre faça print() dos "
+        "valores agregados principais ANTES de atribuir `result = fig`. Exemplo:\n"
+        "    print(df_grouped.to_string())  # ou print(f'Total: {total}')\n"
+        "    result = fig\n"
+        "  Isso garante que os valores reais apareçam no retorno de analisar_dataframe e "
+        "possam ser usados no bloco **Dados do gráfico:**.\n"
         "- TOKENS DE GRÁFICO: copie LITERALMENTE o token `[chart:uuid]` retornado por "
-        "analisar_dataframe na resposta final. Nunca omita — sem ele o gráfico não aparece.\n\n"
+        "analisar_dataframe na resposta final. Nunca omita — sem ele o gráfico não aparece.\n"
+        "- RESUMO DO GRÁFICO: sempre que incluir um token `[chart:uuid]`, adicione logo abaixo "
+        "um bloco **Dados do gráfico:** com 5 a 10 pontos-chave extraídos dos dados reais "
+        "(totais, máximos, mínimos, médias, desvios relevantes, top-N). "
+        "Exemplo:\n"
+        "  **Dados do gráfico:**\n"
+        "  - Total do período: 1.247 peças\n"
+        "  - Linha com maior produção: Linha B (420 pç)\n"
+        "  - Pico: 15/05 (78 pç) | Menor: 03/05 (12 pç)\n"
+        "  Isso permite ao orquestrador responder follow-ups sem reanalisar os dados.\n"
+        "- RESUMO DO RELATÓRIO PDF: sempre que chamar gerar_pdf(), inclua na resposta final "
+        "um bloco **Dados do relatório:** com as seções geradas e os valores principais "
+        "(você já tem esses dados — usou-os para compor o conteudo do PDF). Exemplo:\n"
+        "  **Dados do relatório:**\n"
+        "  - Seções: Produção por linha, FPY semanal, Top defeitos\n"
+        "  - Período: 01/05 a 20/05/2026\n"
+        "  - Total produzido: 1.247 pç | FPY médio: 96,2% | Principal defeito: Scratch (38%)\n"
+        "  Isso permite ao orquestrador responder follow-ups sobre o PDF sem reabri-lo.\n"
+        "- RESUMO DA PLANILHA EXCEL: sempre que chamar gerar_excel(), inclua na resposta final "
+        "um bloco **Dados da planilha:** com o shape, as colunas e os valores agregados principais "
+        "(você viu esses dados no retorno de analisar_dataframe). Exemplo:\n"
+        "  **Dados da planilha:**\n"
+        "  - Abas: Produção (180 linhas × 6 colunas), FPY (180 × 4)\n"
+        "  - Colunas principais: data, linha, turno, producao, meta, fpy\n"
+        "  - Total produzido: 1.247 pç | Média diária: 41,6 pç | FPY médio: 96,2%\n"
+        "  Isso permite ao orquestrador responder follow-ups sobre a planilha sem reprocessar os dados.\n\n"
         "## Modo agendamento [PARA_AGENDAMENTO]\n"
         "Se a mensagem contiver [PARA_AGENDAMENTO], após a análise normal adicione um bloco\n"
         "separado com exatamente este formato (preenchido com o que você executou de verdade):\n\n"
@@ -1084,6 +1115,29 @@ def consultar_analista(detalhes: str, from_date: str, to_date: str, tipo: str = 
             "Informe o usuário e sugira reformular a pergunta."
         )
     return content
+
+
+@tool
+def ver_grafico(chart_id: str) -> list:
+    """Visualiza um gráfico já gerado para responder perguntas de follow-up visuais.
+
+    Use quando o usuário perguntar algo sobre um gráfico exibido anteriormente e
+    os dados textuais do histórico não forem suficientes para responder
+    (ex: 'por que há um pico?', 'onde está a queda?', 'o que mostra essa parte?').
+
+    Args:
+        chart_id: UUID do gráfico, extraído do token [chart:UUID] no histórico.
+    """
+    _tlog("ver_grafico", "CHAMADA", chart_id=chart_id)
+    png_b64 = chart_store.get_chart_b64(chart_id)
+    if not png_b64:
+        _tlog("ver_grafico", "RETORNO", status="NOT_FOUND")
+        return [{"type": "text", "text": f"Gráfico {chart_id} não encontrado."}]
+    _tlog("ver_grafico", "RETORNO", status="OK", bytes=len(png_b64))
+    return [
+        {"type": "text", "text": "Imagem do gráfico para análise:"},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}},
+    ]
 
 
 # ── Sub-agente de scheduling ─────────────────────────────────────────────────
@@ -1328,6 +1382,15 @@ def _build_orchestrator(llm, checkpointer=None):
         "     etc.), chame rag() para buscar a definição precisa do sistema.\n"
         "  4. Combine o que você vê na imagem com os dados retornados pelas tools para dar\n"
         "     uma resposta completa e contextualizada.\n\n"
+        "## Follow-up sobre gráficos gerados por consultar_analista\n"
+        "Quando o usuário fizer uma pergunta de follow-up sobre um gráfico gerado nesta sessão,\n"
+        "consulte o histórico: a resposta do sub-agente inclui um bloco **Dados do gráfico:**\n"
+        "com os pontos-chave (totais, máximos, mínimos, médias). Use esses dados para responder\n"
+        "diretamente — SEM chamar consultar_analista novamente.\n"
+        "Se a pergunta for visual ('por que há um pico?', 'onde está a queda?', 'o que mostra\n"
+        "o trecho X?') ou se os dados textuais do histórico forem insuficientes, chame\n"
+        "ver_grafico(chart_id=UUID) — ela injeta a imagem no contexto para análise visual.\n"
+        "O UUID está no histórico no formato [chart:UUID].\n\n"
         "REGRA CRÍTICA: na dúvida entre A e C, escolha A. Nunca inicie um fluxo de agendamento\n"
         "a menos que o usuário tenha usado explicitamente palavras de agendamento (categoria C).\n\n"
         "## Agendamento de tarefas — fluxo obrigatório ao CRIAR uma tarefa nova\n"
@@ -1451,6 +1514,7 @@ def _build_orchestrator(llm, checkpointer=None):
 
     orq_tools = [
         get_current_datetime, get_dashboard_charts, calcular_periodo, consultar_analista,
+        ver_grafico,
         rag_dominio, rag_capacidades, rag_arquitetura, rag_dados,
         gerar_pdf, gerar_excel,
         gerenciar_agenda,
