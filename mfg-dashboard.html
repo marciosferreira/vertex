@@ -1899,6 +1899,11 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     // Fallback html2canvas para mobile (sem getDisplayMedia)
     if (!navigator.mediaDevices?.getDisplayMedia) {
       _frameScale = window.devicePixelRatio || 1;
+      const COLOR_PROPS = [
+        'color','backgroundColor','borderTopColor','borderRightColor',
+        'borderBottomColor','borderLeftColor','outlineColor','caretColor',
+        'textDecorationColor','columnRuleColor','fill','stroke',
+      ];
       const canvas = await html2canvas(document.body, {
         scale: _frameScale,
         useCORS: true,
@@ -1907,6 +1912,20 @@ document.getElementById('chatScreenshotBtn').style.display = '';
         scrollY: 0,
         windowWidth: document.documentElement.scrollWidth,
         windowHeight: document.documentElement.scrollHeight,
+        onclone: (_doc, clonedBody) => {
+          // html2canvas não suporta oklch — copia valores computados (já em rgb) do doc original
+          const origEls   = document.body.querySelectorAll('*');
+          const cloneEls  = clonedBody.querySelectorAll('*');
+          origEls.forEach((orig, i) => {
+            const cl = cloneEls[i];
+            if (!cl) return;
+            const cs = getComputedStyle(orig);
+            COLOR_PROPS.forEach(p => {
+              const v = cs[p];
+              if (v) cl.style[p] = v;
+            });
+          });
+        },
       });
       return canvas;
     }
