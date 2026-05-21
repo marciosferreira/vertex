@@ -465,6 +465,15 @@
     background:rgba(167,139,250,.12); pointer-events:none;
     box-shadow:0 0 0 9999px rgba(0,0,0,.35);
   }
+  #selectionConfirmBtn {
+    display:none; position:fixed; z-index:10001;
+    background:#a78bfa; color:#fff; border:none; border-radius:8px;
+    padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer;
+    box-shadow:0 2px 14px rgba(0,0,0,.5); align-items:center; gap:6px;
+    font-family:Inter,sans-serif; white-space:nowrap;
+  }
+  #selectionConfirmBtn.visible { display:flex; }
+  #selectionConfirmBtn:hover { background:#7c3aed; }
 
   /* Preview de imagens — linha própria acima dos botões */
   #imagePreviewWrap {
@@ -1180,6 +1189,7 @@
 <div id="screenshotOverlay">
   <div id="selectionRect" style="display:none;"></div>
 </div>
+<button id="selectionConfirmBtn">&#10003; Capturar área</button>
 </div><!-- /#tab-panel-dashboard -->
 
 <div id="screenshotSpinner" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;">
@@ -1942,9 +1952,11 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
 (function() {
   let _startX = 0, _startY = 0, _dragging = false;
-  const overlay  = () => document.getElementById('screenshotOverlay');
-  const selRect  = () => document.getElementById('selectionRect');
-  const spinner  = () => document.getElementById('screenshotSpinner');
+  let _selCoords = null; // {x, y, w, h} da última seleção confirmada
+  const overlay   = () => document.getElementById('screenshotOverlay');
+  const selRect   = () => document.getElementById('selectionRect');
+  const spinner   = () => document.getElementById('screenshotSpinner');
+  const confirmBtn= () => document.getElementById('selectionConfirmBtn');
 
   async function _grabFrame() {
     const scale = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -1960,10 +1972,72 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     if (_chatWasOpen) { _chatWasOpen = false; openChat(); }
   }
 
+  function _hideConfirmBtn() {
+    confirmBtn().classList.remove('visible');
+  }
+
+  function _showConfirmBtn(x, y, w, h) {
+    const btn = confirmBtn();
+    // posiciona no canto inferior direito da seleção, com 8px de margem
+    const bw = 140, bh = 36;
+    let left = x + w - bw;
+    let top  = y + h + 8;
+    // garante que não sai da tela
+    if (left < 8) left = 8;
+    if (top + bh > window.innerHeight - 8) top = y - bh - 8;
+    btn.style.left = left + 'px';
+    btn.style.top  = top  + 'px';
+    btn.classList.add('visible');
+  }
+
+  async function _captureCoords(coords) {
+    const { x, y, w, h } = coords;
+    overlay().classList.remove('active');
+    selRect().style.display = 'none';
+    _hideConfirmBtn();
+    _selCoords = null;
+
+    spinner().style.display = 'flex';
+    let frame;
+    try {
+      frame = await _grabFrame();
+    } catch (e) {
+      spinner().style.display = 'none';
+      _reopenChat();
+      alert('Erro ao capturar tela: ' + e.message);
+      return;
+    }
+    spinner().style.display = 'none';
+    _reopenChat();
+
+    const s = Math.min(window.devicePixelRatio || 1, 1.5);
+    const crop = document.createElement('canvas');
+    crop.width  = Math.round(w * s);
+    crop.height = Math.round(h * s);
+    crop.getContext('2d').drawImage(
+      frame,
+      Math.round((x + window.scrollX) * s), Math.round((y + window.scrollY) * s),
+      Math.round(w * s), Math.round(h * s),
+      0, 0, crop.width, crop.height
+    );
+
+    if (_pendingImages.length >= 3) { alert('Máximo de 3 imagens por mensagem.'); return; }
+    _pendingImages.push(crop.toDataURL('image/png').split(',')[1]);
+    _renderImagePreviews();
+    document.getElementById('chatInput').focus();
+  }
+
+  // Clique no botão de confirmação
+  confirmBtn().addEventListener('click', () => {
+    if (_selCoords) _captureCoords(_selCoords);
+  });
+
   window.startScreenshot = function() {
     const sidebar = document.getElementById('chatSidebar');
     _chatWasOpen = !sidebar.classList.contains('collapsed');
     if (_chatWasOpen) closeChat();
+    _hideConfirmBtn();
+    _selCoords = null;
     overlay().classList.add('active');
   };
 
@@ -1976,6 +2050,7 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
   function _selStart(cx, cy) {
     if (!overlay().classList.contains('active')) return;
+    _hideConfirmBtn();
     _dragging = true;
     _startX = cx; _startY = cy;
     _updateRect(cx, cy, cx, cy);
@@ -1984,46 +2059,21 @@ document.getElementById('chatScreenshotBtn').style.display = '';
     if (!_dragging) return;
     _updateRect(_startX, _startY, cx, cy);
   }
-  async function _selEnd(cx, cy) {
+  function _selEnd(cx, cy) {
     if (!_dragging) return;
     _dragging = false;
 
     const x = Math.min(_startX, cx), y = Math.min(_startY, cy);
     const w = Math.abs(cx - _startX),  h = Math.abs(cy - _startY);
 
-    overlay().classList.remove('active');
-    selRect().style.display = 'none';
-
-    if (w < 10 || h < 10) { _reopenChat(); return; }
-
-    spinner().style.display = 'flex';
-    try {
-      _capturedFrame = await _grabFrame();
-    } catch (e) {
-      spinner().style.display = 'none';
-      _reopenChat();
-      alert('Erro ao capturar tela: ' + e.message);
+    if (w < 10 || h < 10) {
+      selRect().style.display = 'none';
       return;
     }
-    spinner().style.display = 'none';
 
-    _reopenChat();
-
-    const s = Math.min(window.devicePixelRatio || 1, 1.5);
-    const crop = document.createElement('canvas');
-    crop.width  = Math.round(w * s);
-    crop.height = Math.round(h * s);
-    crop.getContext('2d').drawImage(
-      _capturedFrame,
-      Math.round((x + window.scrollX) * s), Math.round((y + window.scrollY) * s),
-      Math.round(w * s), Math.round(h * s),
-      0, 0, crop.width, crop.height
-    );
-
-    if (_pendingImages.length >= 3) { alert('Máximo de 3 imagens por mensagem.'); return; }
-    _pendingImages.push(crop.toDataURL('image/png').split(',')[1]);
-    _renderImagePreviews();
-    document.getElementById('chatInput').focus();
+    // Salva coordenadas e mostra botão de confirmação — não captura ainda
+    _selCoords = { x, y, w, h };
+    _showConfirmBtn(x, y, w, h);
   }
 
   // Mouse
@@ -2083,9 +2133,11 @@ document.getElementById('chatScreenshotBtn').style.display = '';
 
   // ESC cancela
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && overlay().classList.contains('active')) {
+    if (e.key === 'Escape' && (overlay().classList.contains('active') || _selCoords)) {
       overlay().classList.remove('active');
       selRect().style.display = 'none';
+      _hideConfirmBtn();
+      _selCoords = null;
       _dragging = false;
       _reopenChat();
     }
