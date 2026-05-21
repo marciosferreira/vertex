@@ -68,15 +68,17 @@ def _build_graph(llm):
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
-def init_agent(project: str, location: str, model_name: str) -> None:
+def init_agent(project: str, location: str, model_name: str, credentials=None) -> None:
     """Inicializa o grafo do agente. Chamado no startup do FastAPI."""
     global _agent_graph
     try:
         from langchain_google_vertexai import ChatVertexAI
+
         llm = ChatVertexAI(
             model_name=model_name,
             project=project,
             location=location,
+            credentials=credentials,
             temperature=0.7,
         )
         _agent_graph = _build_graph(llm)

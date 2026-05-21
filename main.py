@@ -88,25 +88,26 @@ def _embed_charts(text: str) -> str:
     return text
 
 
-def _resolve_credentials() -> None:
-    """Resolve credenciais Google a partir de env var (base64) ou arquivo local."""
+def _load_credentials():
+    """Carrega credenciais Google como objeto, a partir de env var (base64) ou arquivo local."""
     import base64
-    import tempfile
+    import json as _json
+    from google.oauth2 import service_account
+
+    SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
     b64 = os.getenv("GOOGLE_CREDENTIALS_JSON")
     if b64:
-        json_bytes = base64.b64decode(b64)
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-        tmp.write(json_bytes)
-        tmp.flush()
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+        info = _json.loads(base64.b64decode(b64))
         logger.info("Credenciais Google carregadas via GOOGLE_CREDENTIALS_JSON")
-        return
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
 
-    creds = Path(__file__).parent / "credentials.json"
-    if creds.exists():
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(creds)
+    creds_path = Path(__file__).parent / "credentials.json"
+    if creds_path.exists():
         logger.info("Credenciais Google carregadas via credentials.json local")
+        return service_account.Credentials.from_service_account_file(str(creds_path), scopes=SCOPES)
+
+    return None
 
 
 def _init_vertex():
@@ -115,14 +116,14 @@ def _init_vertex():
         return
     try:
         load_dotenv()
-        _resolve_credentials()
         project    = os.getenv("PROJECT_ID")
         location   = os.getenv("LOCATION", "us-central1")
         model_name = os.getenv("MODEL_NAME", "gemini-2.5-flash")
         if not project:
             logger.warning("PROJECT_ID não definido — chat IA desabilitado")
             return
-        init_multi_agent(project=project, location=location, model_name=model_name)
+        credentials = _load_credentials()
+        init_multi_agent(project=project, location=location, model_name=model_name, credentials=credentials)
     except Exception:
         logger.warning("Falha ao inicializar Vertex AI:\n%s", traceback.format_exc())
 
@@ -484,10 +485,10 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         return JSONResponse(status_code=503, content={"error": "Agente IA não configurado"})
 
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel, Part
+        from google import genai
+        from google.genai import types as genai_types
     except ImportError:
-        return JSONResponse(status_code=500, content={"error": "vertexai SDK não disponível"})
+        return JSONResponse(status_code=500, content={"error": "google-genai SDK não disponível"})
 
     project    = os.getenv("PROJECT_ID", "")
     location   = os.getenv("LOCATION", "us-central1")
@@ -497,14 +498,16 @@ async def transcribe_audio(audio: UploadFile = File(...)):
     mime_type   = audio.content_type or "audio/webm"
 
     try:
-        vertexai.init(project=project, location=location)
-        model      = GenerativeModel(model_name)
-        audio_part = Part.from_data(audio_bytes, mime_type=mime_type)
-        response   = await asyncio.to_thread(
-            model.generate_content,
-            [audio_part, "Transcreva literalmente o áudio. Regras: (1) copie palavra por palavra o que foi dito, sem corrigir, resumir, interpretar ou adicionar nada; (2) retorne apenas o texto transcrito, sem introduções, aspas ou comentários; (3) se não houver fala, retorne uma string vazia."],
+        credentials = _load_credentials()
+        client = genai.Client(vertexai=True, project=project, location=location, credentials=credentials)
+        contents = genai_types.Content(role="user", parts=[
+            genai_types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+            genai_types.Part.from_text(text="Transcreva literalmente o áudio. Regras: (1) copie palavra por palavra o que foi dito, sem corrigir, resumir, interpretar ou adicionar nada; (2) retorne apenas o texto transcrito, sem introduções, aspas ou comentários; (3) se não houver fala, retorne uma string vazia."),
+        ])
+        response = await asyncio.to_thread(
+            lambda: client.models.generate_content(model=model_name, contents=contents)
         )
-        transcript = response.text.strip()
+        transcript = (getattr(response, "text", None) or "").strip()
     except Exception as e:
         logger.error("Transcrição via Gemini falhou: %s", e)
         return JSONResponse(status_code=502, content={"error": f"Falha na transcrição: {e}"})

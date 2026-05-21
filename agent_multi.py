@@ -1774,7 +1774,7 @@ def _build_orchestrator(llm, checkpointer=None):
 
 # ── API pública ───────────────────────────────────────────────────────────────
 
-def init_multi_agent(project: str, location: str, model_name: str) -> None:
+def init_multi_agent(project: str, location: str, model_name: str, credentials=None) -> None:
     """Inicializa orquestrador e sub-agente. Chamado no startup do FastAPI."""
     global _orchestrator_graph, _sub_agent_graph, _scheduler_agent_graph, _checkpointer
     try:
@@ -1785,6 +1785,7 @@ def init_multi_agent(project: str, location: str, model_name: str) -> None:
             model_name=model_name,
             project=project,
             location=location,
+            credentials=credentials,
             temperature=0.7,
         )
 
