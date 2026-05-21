@@ -2036,34 +2036,47 @@ document.getElementById('chatScreenshotBtn').style.display = '';
   document.addEventListener('mouseup',   e => _selEnd(e.clientX, e.clientY));
 
   // Touch: 1 dedo = marcar área, 2 dedos = rolar a página
+  let _twoFingerLastY = null;
+
   overlay().addEventListener('touchstart', e => {
+    e.preventDefault();
     if (e.touches.length === 2) {
-      // 2 dedos: desativa overlay temporariamente para permitir scroll nativo
-      overlay().style.pointerEvents = 'none';
+      _dragging = false;
+      selRect().style.display = 'none';
+      _twoFingerLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       return;
     }
-    e.preventDefault();
-    overlay().style.pointerEvents = 'auto';
+    _twoFingerLastY = null;
     const t = e.touches[0];
     _selStart(t.clientX, t.clientY);
   }, { passive: false });
+
   overlay().addEventListener('touchmove', e => {
+    e.preventDefault();
     if (e.touches.length === 2) {
-      // 2 dedos: deixa o scroll nativo agir (overlay com pointer-events: none)
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      if (_twoFingerLastY !== null) {
+        window.scrollBy(0, _twoFingerLastY - midY);
+      }
+      _twoFingerLastY = midY;
       return;
     }
-    e.preventDefault();
+    _twoFingerLastY = null;
     const t = e.touches[0];
     _selMove(t.clientX, t.clientY);
   }, { passive: false });
+
   overlay().addEventListener('touchend', e => {
-    if (e.touches.length === 0 && overlay().style.pointerEvents === 'none') {
-      // Voltou para 0 dedos após scroll de 2 dedos: reativa overlay
-      overlay().style.pointerEvents = 'auto';
+    e.preventDefault();
+    if (e.touches.length >= 1) {
+      // ainda tem dedo — pode ser transição de 2 para 1 dedo
+      _twoFingerLastY = null;
+      _dragging = false;
+      selRect().style.display = 'none';
       return;
     }
-    if (e.touches.length >= 1) return; // ainda tem dedo na tela
-    e.preventDefault();
+    _twoFingerLastY = null;
+    if (!_dragging) return;
     const t = e.changedTouches[0];
     _selEnd(t.clientX, t.clientY);
   }, { passive: false });
