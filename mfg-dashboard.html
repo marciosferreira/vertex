@@ -2035,18 +2035,34 @@ document.getElementById('chatScreenshotBtn').style.display = '';
   document.addEventListener('mousemove', e => _selMove(e.clientX, e.clientY));
   document.addEventListener('mouseup',   e => _selEnd(e.clientX, e.clientY));
 
-  // Touch (mobile)
+  // Touch: 1 dedo = marcar área, 2 dedos = rolar a página
   overlay().addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      // 2 dedos: desativa overlay temporariamente para permitir scroll nativo
+      overlay().style.pointerEvents = 'none';
+      return;
+    }
     e.preventDefault();
+    overlay().style.pointerEvents = 'auto';
     const t = e.touches[0];
     _selStart(t.clientX, t.clientY);
   }, { passive: false });
   overlay().addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      // 2 dedos: deixa o scroll nativo agir (overlay com pointer-events: none)
+      return;
+    }
     e.preventDefault();
     const t = e.touches[0];
     _selMove(t.clientX, t.clientY);
   }, { passive: false });
   overlay().addEventListener('touchend', e => {
+    if (e.touches.length === 0 && overlay().style.pointerEvents === 'none') {
+      // Voltou para 0 dedos após scroll de 2 dedos: reativa overlay
+      overlay().style.pointerEvents = 'auto';
+      return;
+    }
+    if (e.touches.length >= 1) return; // ainda tem dedo na tela
     e.preventDefault();
     const t = e.changedTouches[0];
     _selEnd(t.clientX, t.clientY);
