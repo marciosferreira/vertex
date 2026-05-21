@@ -159,6 +159,96 @@ def list_dashboard_widgets() -> str:
     return _format_widgets(_all_widgets(_current_user_id()))
 
 
+def _resolve_widget(conn, widget_id: str):
+    """Retorna a row do widget aceitando ID completo ou prefixo de 8 chars."""
+    if len(widget_id) <= 8:
+        return conn.execute(
+            "SELECT id, title, description, code FROM dashboard_widgets WHERE id LIKE ?",
+            (widget_id + "%",),
+        ).fetchone()
+    return conn.execute(
+        "SELECT id, title, description, code FROM dashboard_widgets WHERE id = ?",
+        (widget_id,),
+    ).fetchone()
+
+
+@tool
+def get_widget_code(widget_id: str) -> str:
+    """Recupera o código Python de um painel customizado do dashboard.
+
+    Use esta tool para ler o código de um painel antes de editá-lo com
+    update_widget. Combine com list_dashboard_widgets para obter os IDs.
+
+    Args:
+        widget_id: ID completo ou primeiros 8 caracteres do ID do painel.
+    """
+    with get_db() as conn:
+        row = _resolve_widget(conn, widget_id)
+    if not row:
+        return f"Painel '{widget_id}' não encontrado."
+    return (
+        f"**Painel:** {row['title']}\n"
+        f"**ID:** `{row['id']}`\n\n"
+        f"```python\n{row['code']}\n```"
+    )
+
+
+@tool
+def update_widget(widget_id: str, code: str, title: str = "", description: str = "") -> str:
+    """Atualiza o código (e opcionalmente título/descrição) de um painel existente.
+
+    Fluxo correto para editar um painel:
+    1. list_dashboard_widgets → obter o ID
+    2. get_widget_code → ler o código atual
+    3. Modificar o código
+    4. test_widget_code → validar
+    5. update_widget → salvar e atualizar no dashboard
+
+    Args:
+        widget_id: ID completo ou primeiros 8 caracteres do ID do painel.
+        code: Novo código Python com `def run(from_date, to_date, ctx)`.
+        title: Novo título (deixe vazio para manter o atual).
+        description: Nova descrição (deixe vazio para manter a atual).
+    """
+    from_date, to_date = default_test_range()
+    session_id = f"widget_validate_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    try:
+        run_widget_code(code, from_date, to_date, session_id)
+    except WidgetCodeError as e:
+        return (
+            f"❌ **Código inválido — painel NÃO foi atualizado.**\n```\n{e}\n```\n"
+            "Corrija e use test_widget_code antes de tentar novamente."
+        )
+    except Exception as e:
+        return f"❌ **Erro inesperado na validação:**\n```\n{e}\n```"
+
+    with get_db() as conn:
+        row = _resolve_widget(conn, widget_id)
+        if not row:
+            return f"Painel '{widget_id}' não encontrado."
+        full_id = row["id"]
+        new_title = title.strip() or row["title"]
+        new_desc  = description.strip() or row["description"]
+        conn.execute(
+            "UPDATE dashboard_widgets SET code=?, title=?, description=? WHERE id=?",
+            (code, new_title, new_desc, full_id),
+        )
+        conn.commit()
+
+    try:
+        from agent_multi import _push_event, _current_session
+        _push_event(_current_session.get(), {"type": "widget_updated", "widget_id": full_id})
+    except Exception:
+        pass
+
+    return (
+        f"✅ **Painel '{new_title}' atualizado com sucesso.**\n"
+        f"ID: `{full_id[:8]}...`\n\n"
+        "O dashboard será atualizado automaticamente."
+    )
+
+
 @tool
 def delete_dashboard_widget(widget_id: str) -> str:
     """Remove um painel customizado do dashboard pelo ID (ou prefixo do ID).
@@ -186,6 +276,12 @@ def delete_dashboard_widget(widget_id: str) -> str:
         title = row["title"]
         conn.execute("DELETE FROM dashboard_widgets WHERE id = ?", (full_id,))
         conn.commit()
+
+    try:
+        from agent_multi import _push_event, _current_session
+        _push_event(_current_session.get(), {"type": "widget_deleted", "widget_id": full_id})
+    except Exception:
+        pass
 
     widgets = _all_widgets(user_id)
     return (

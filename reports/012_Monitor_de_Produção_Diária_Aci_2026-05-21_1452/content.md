@@ -1,0 +1,1 @@
+Produção de hoje: 4187 unidades (Threshold: 3000)

@@ -61,6 +61,8 @@ from scheduler.widget_tools import (
     test_widget_code,
     list_dashboard_widgets,
     delete_dashboard_widget,
+    get_widget_code,
+    update_widget,
 )
 
 logger = logging.getLogger(__name__)
@@ -279,6 +281,8 @@ _TOOL_LABELS: dict[str, str] = {
     "add_chart_to_dashboard":    "📌 Adicionando painel ao dashboard",
     "list_dashboard_widgets":    "📋 Listando painéis customizados",
     "delete_dashboard_widget":   "🗑️ Removendo painel do dashboard",
+    "get_widget_code":           "🔍 Lendo código do painel",
+    "update_widget":             "✏️ Atualizando painel do dashboard",
 }
 
 
@@ -1665,8 +1669,16 @@ def _build_orchestrator(llm, checkpointer=None):
         "5. Chame add_chart_to_dashboard(title=TÍTULO, description=DESCRIÇÃO, code=CÓDIGO).\n\n"
         "6. Responda: 'Painel **[título]** adicionado ao dashboard. "
         "Ele aparece na seção Painéis Customizados ao final da página.'\n\n"
-        "## Painéis customizados — listar e remover\n"
+        "## Painéis customizados — listar, editar e remover\n"
         "- Para LISTAR painéis: chame list_dashboard_widgets().\n"
+        "- Para LER o código de um painel: chame get_widget_code(widget_id=ID).\n"
+        "- Para EDITAR um painel existente (alterar cores, lógica, título etc.):\n"
+        "  1. list_dashboard_widgets → obter o ID\n"
+        "  2. get_widget_code → ler o código atual\n"
+        "  3. Modificar o código conforme solicitado\n"
+        "  4. test_widget_code → validar\n"
+        "  5. update_widget(widget_id, code, title?, description?) → salvar\n"
+        "  NÃO delete e recrie — use update_widget para editar in-place.\n"
         "- Para REMOVER um painel: chame delete_dashboard_widget(widget_id=ID).\n\n"
         "## RACIOCÍNIO OBRIGATÓRIO\n"
         "SEMPRE que for chamar uma tool, você DEVE incluir na mesma resposta um texto curto "
@@ -1686,6 +1698,7 @@ def _build_orchestrator(llm, checkpointer=None):
         get_task_code, test_task_code, save_task_code,
         test_widget_code, add_chart_to_dashboard,
         list_dashboard_widgets, delete_dashboard_widget,
+        get_widget_code, update_widget,
     ]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)

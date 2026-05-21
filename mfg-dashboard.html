@@ -723,6 +723,9 @@
   <button class="tab-btn" id="tab-btn-arquitetura" onclick="switchTab('arquitetura')">
     <i class="fa-solid fa-diagram-project" style="margin-right:5px;"></i> Arquitetura
   </button>
+  <button class="tab-btn" id="tab-btn-exemplos" onclick="switchTab('exemplos')">
+    <i class="fa-solid fa-terminal" style="margin-right:5px;"></i> Exemplos
+  </button>
 </nav>
 
 <div id="tab-panel-dashboard">
@@ -1609,11 +1612,14 @@ async function loadCustomWidgets() {
     section.style.display = '';
     const widgets = _applyWidgetOrder(raw);
 
-    // Destroy charts de widgets removidos
+    // Remove cards e charts de widgets deletados
     const currentIds = new Set(widgets.map(w => w.id));
     for (const [id, chart] of Object.entries(_widgetCharts)) {
       if (!currentIds.has(id)) { chart.destroy(); delete _widgetCharts[id]; }
     }
+    grid.querySelectorAll('[data-widget-id]').forEach(card => {
+      if (!currentIds.has(card.dataset.widgetId)) card.remove();
+    });
 
     // Upsert cards na ordem correta
     for (const w of widgets) {
@@ -2383,6 +2389,16 @@ async function sendChat() {
       _markLastArtifactSaved();
     } else if (ev.type === 'widget_added') {
       loadCustomWidgets();
+    } else if (ev.type === 'widget_updated') {
+      _renderWidget(ev.widget_id);
+    } else if (ev.type === 'widget_deleted') {
+      const id = ev.widget_id;
+      if (_widgetCharts[id]) { _widgetCharts[id].destroy(); delete _widgetCharts[id]; }
+      const card = document.getElementById('widget-card-' + id);
+      if (card) card.remove();
+      const grid = document.getElementById('customWidgetsGrid');
+      if (grid && !grid.children.length)
+        document.getElementById('customWidgetsSection').style.display = 'none';
     } else if (ev.type === 'reply') {
       es.close();
       _finalizeThinking(ids, hasEvents);
@@ -2677,7 +2693,7 @@ initDashboard();
 // ── Tab switching ──────────────────────────────────────
 let _arqMermaidReady = false;
 function switchTab(name) {
-  const panels = ['dashboard', 'arquitetura'];
+  const panels = ['dashboard', 'arquitetura', 'exemplos'];
   panels.forEach(p => {
     const panel = document.getElementById('tab-panel-' + p);
     const btn   = document.getElementById('tab-btn-' + p);
@@ -3076,6 +3092,75 @@ graph TD
                     <h5 class="text-white font-bold text-sm mb-2">Solução Aplicada</h5>
                     <p class="text-xs text-slate-400 leading-relaxed">Lazy-loading estratégico restringe a injeção do prompt de sistema apenas à skill correlacionada ao escopo.</p>
                 </div>
+            </div>
+        </section>
+
+        <!-- Painéis Customizados -->
+        <section class="border border-sky-500/20 rounded-xl bg-[#06111a] p-6 relative overflow-hidden">
+            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-table-columns text-[9rem]"></i></div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 bg-sky-500/10 border border-sky-500/30 rounded-lg flex items-center justify-center text-sky-400 shrink-0"><i class="fa-solid fa-table-columns"></i></div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Painéis Customizados</h3>
+                    <span class="text-xs font-mono text-slate-400">Dashboards criados dinamicamente pelo agente · persistidos por usuário</span>
+                </div>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed mb-5">O agente pode criar painéis de gráficos diretamente no dashboard a partir de uma instrução em chat — sem nenhum formulário ou configuração manual. Cada painel é salvo no banco vinculado ao <code class="text-sky-300">user_id</code> do browser e reaparece automaticamente a cada abertura da página. O usuário pode reordenar por arrastar-e-soltar e remover painéis individualmente.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-sky-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-comment-dots"></i> 1. Pedido em linguagem natural</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">"Crie um gráfico de barras com o OEE por linha dos últimos 7 dias" — o agente executa a análise, monta a config Chart.js e persiste no SQLite via <code class="text-sky-300">POST /dashboard-widgets</code>.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-sky-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-database"></i> 2. Config salva no backend</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">O endpoint <code class="text-sky-300">GET /dashboard-widgets/{id}/data</code> devolve o objeto Chart.js completo. O frontend instancia o gráfico diretamente — sem lógica de mapeamento no browser.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-sky-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-arrows-up-down-left-right"></i> 3. Layout persistido por usuário</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">A ordem dos painéis é salva no <code class="text-sky-300">localStorage</code> por <code>user_id</code>. Drag-and-drop nativo sem bibliotecas — o DOM é a fonte de verdade da ordem.</p>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-4 flex flex-wrap gap-3 items-center">
+                <span class="text-xs font-mono text-slate-500 uppercase tracking-wider mr-2">Tipos de painel suportados:</span>
+                <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs font-mono">📊 bar / line / scatter</span>
+                <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs font-mono">🍩 doughnut / pie</span>
+                <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs font-mono">🔢 qualquer tipo Chart.js</span>
+                <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs font-mono">🗑️ remoção individual</span>
+                <span class="px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-xs font-mono">↔️ reordenação por drag</span>
+            </div>
+        </section>
+
+        <!-- Tarefa Sob Demanda -->
+        <section class="border border-orange-500/20 rounded-xl bg-[#160f06] p-6 relative overflow-hidden">
+            <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none"><i class="fa-solid fa-bolt text-[9rem]"></i></div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-center justify-center text-orange-400 shrink-0"><i class="fa-solid fa-bolt"></i></div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Tarefa Sob Demanda</h3>
+                    <span class="text-xs font-mono text-slate-400">Execução avulsa em background · sem horário fixo · notifica ao concluir</span>
+                </div>
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed mb-5">Além das tarefas recorrentes, o agente suporta execuções <strong class="text-white">disparadas manualmente a qualquer momento</strong> — sem necessidade de configurar frequência ou horário. O usuário pede a análise no chat com <span class="text-orange-300 font-medium">"execute agora e me avise quando terminar"</span>; o daemon roda em background e empurra um alerta ao dashboard assim que conclui, sem bloquear a interface.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-orange-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-comment-dots"></i> 1. Disparo pelo chat</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">O agente cria uma tarefa com <code class="text-orange-300">frequency="on_demand"</code> e <code>next_run</code> imediato. O daemon a detecta no próximo ciclo (≤ 120s) e inicia a execução.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-orange-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-gears"></i> 2. Execução isolada</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Roda no mesmo <code class="text-orange-300">runner.py</code> sandbox das tarefas agendadas — namespace efêmero, sem interferência nas sessões interativas do chat. O histórico de execução fica registrado em <code>task_runs</code>.</p>
+                </div>
+                <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
+                    <div class="text-orange-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-bell"></i> 3. Notificação ao concluir</div>
+                    <p class="text-xs text-slate-400 leading-relaxed">Ao finalizar, o daemon empurra um alerta via <code class="text-orange-300">POST /alerts</code>. O badge de alertas no header acende e o artefato gerado aparece no painel Artifacts — tudo sem recarregar a página.</p>
+                </div>
+            </div>
+            <div class="border-t border-slate-800 pt-4 flex flex-wrap gap-3 items-center">
+                <span class="text-xs font-mono text-slate-500 uppercase tracking-wider mr-2">Diferença para tarefas agendadas:</span>
+                <span class="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-mono">⚡ sem cron — executa imediatamente</span>
+                <span class="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-mono">🔁 frequência on_demand</span>
+                <span class="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-mono">🔔 notifica via alertas</span>
+                <span class="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-300 text-xs font-mono">▶ botão "executar agora" no painel</span>
             </div>
         </section>
 
@@ -3716,6 +3801,230 @@ async function demoReduce() {
 }
 
 document.addEventListener('DOMContentLoaded', _loadDemoState);
+</script>
+
+<!-- ══════════════════════════════════════════════════════
+     PAINEL EXEMPLOS DE COMANDOS
+     ══════════════════════════════════════════════════════ -->
+<div id="tab-panel-exemplos" style="display:none;background:#0a0e14;min-height:100vh;padding:40px 48px 80px;font-family:'Inter',sans-serif;color:#e2e8f0;background-image:linear-gradient(rgba(56,189,248,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,0.03) 1px,transparent 1px);background-size:40px 40px;">
+
+  <!-- Título -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">
+      <div style="width:3px;height:36px;background:var(--cyan);border-radius:2px;flex-shrink:0;"></div>
+      <div>
+        <div style="font-size:22px;font-weight:700;letter-spacing:.03em;">Exemplos de Comandos</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:2px;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;">COMO USAR O AGENTE · REFERÊNCIA RÁPIDA</div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:#94a3b8;max-width:680px;line-height:1.7;margin-left:17px;">
+      Digite qualquer um dos comandos abaixo no chat. Clique no botão <span style="background:#1e293b;border:1px solid #334155;border-radius:4px;padding:1px 7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#38bdf8;">↗ copiar</span> para colar direto no campo de mensagem.
+    </p>
+  </div>
+
+  <style>
+    .ex-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:20px; }
+    .ex-card { background:#0f1520; border:1px solid #1e2d3d; border-radius:10px; overflow:hidden; }
+    .ex-card-head { display:flex; align-items:center; gap:10px; padding:14px 18px 12px; border-bottom:1px solid #1e2d3d; }
+    .ex-card-icon { font-size:16px; width:28px; text-align:center; }
+    .ex-card-title { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#e2e8f0; }
+    .ex-card-subtitle { font-size:10px; color:#94a3b8; font-family:'JetBrains Mono',monospace; margin-top:1px; }
+    .ex-item { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:10px 18px; border-bottom:1px solid rgba(30,45,61,.6); transition:background .12s; cursor:default; }
+    .ex-item:last-child { border-bottom:none; }
+    .ex-item:hover { background:rgba(56,189,248,0.04); }
+    .ex-text { font-size:12px; color:#cbd5e1; line-height:1.5; flex:1; }
+    .ex-text em { color:#94a3b8; font-style:normal; font-size:11px; display:block; margin-top:2px; font-family:'JetBrains Mono',monospace; }
+    .ex-copy { flex-shrink:0; background:none; border:1px solid #1e2d3d; border-radius:4px; color:#475569; font-size:10px; font-family:'JetBrains Mono',monospace; padding:3px 8px; cursor:pointer; transition:all .15s; white-space:nowrap; }
+    .ex-copy:hover { border-color:var(--cyan); color:var(--cyan); background:rgba(56,189,248,.06); }
+    .ex-tag { display:inline-block; font-size:9px; font-family:'JetBrains Mono',monospace; letter-spacing:.06em; padding:2px 6px; border-radius:3px; margin-right:4px; margin-bottom:2px; }
+    .tag-cyan  { background:rgba(56,189,248,.1);  color:#38bdf8; border:1px solid rgba(56,189,248,.2); }
+    .tag-green { background:rgba(52,211,153,.1);  color:#34d399; border:1px solid rgba(52,211,153,.2); }
+    .tag-orange{ background:rgba(251,146,60,.1);  color:#fb923c; border:1px solid rgba(251,146,60,.2); }
+    .tag-purple{ background:rgba(167,139,250,.1); color:#a78bfa; border:1px solid rgba(167,139,250,.2); }
+    .tag-red   { background:rgba(248,113,113,.1); color:#f87171; border:1px solid rgba(248,113,113,.2); }
+    .tag-blue  { background:rgba(96,165,250,.1);  color:#60a5fa; border:1px solid rgba(96,165,250,.2); }
+  </style>
+
+  <div class="ex-grid">
+
+    <!-- ── ANÁLISE DE DADOS ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">📊</div>
+        <div>
+          <div class="ex-card-title">Análise de Dados</div>
+          <div class="ex-card-subtitle">Gráficos, tabelas e análises gerados em tempo real no chat</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Qual foi a produção de hoje por linha?</span><button class="ex-copy" onclick="_exCopy(this,'Qual foi a produção de hoje por linha?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Mostre um gráfico de produção dos últimos 7 dias agregado por dia</span><button class="ex-copy" onclick="_exCopy(this,'Mostre um gráfico de produção dos últimos 7 dias agregado por dia')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Como está o OEE agora? Compare entre as linhas</span><button class="ex-copy" onclick="_exCopy(this,'Como está o OEE agora? Compare entre as linhas')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Compare o FPY entre os turnos A, B e C nessa semana</span><button class="ex-copy" onclick="_exCopy(this,'Compare o FPY entre os turnos A, B e C nessa semana')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Mostre os defeitos por categoria dos últimos 30 dias em gráfico de barras</span><button class="ex-copy" onclick="_exCopy(this,'Mostre os defeitos por categoria dos últimos 30 dias em gráfico de barras')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Qual linha está com pior desempenho hoje?</span><button class="ex-copy" onclick="_exCopy(this,'Qual linha está com pior desempenho hoje?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Gere uma tabela com produção, defeitos e FPY por turno esta semana</span><button class="ex-copy" onclick="_exCopy(this,'Gere uma tabela com produção, defeitos e FPY por turno esta semana')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Mostre a tendência de defeitos dos últimos 14 dias em gráfico de linha</span><button class="ex-copy" onclick="_exCopy(this,'Mostre a tendência de defeitos dos últimos 14 dias em gráfico de linha')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Qual foi o melhor e pior dia de produção no mês atual?</span><button class="ex-copy" onclick="_exCopy(this,'Qual foi o melhor e pior dia de produção no mês atual?')">↗ copiar</button></div>
+      <div style="padding:10px 18px;background:rgba(56,189,248,0.04);border-top:1px solid #1e2d3d;display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;"><span style="flex-shrink:0;">📅</span><span><strong style="color:#475569;">Períodos naturais</strong> — use "hoje", "esta semana", "mês atual", "últimos 7 dias", "mês anterior". O agente converte automaticamente.</span></div>
+        <div style="display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;"><span style="flex-shrink:0;">🔄</span><span><strong style="color:#475569;">Iteração</strong> — após um gráfico aparecer no chat, peça variações: "mude para barras", "adicione a linha de média", "paleta mais escura".</span></div>
+        <div style="display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;"><span style="flex-shrink:0;">🎙️</span><span><strong style="color:#475569;">Voz</strong> — clique no microfone no chat para ditar qualquer comando por áudio.</span></div>
+      </div>
+    </div>
+
+    <!-- ── RELATÓRIOS PDF / EXCEL ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">📄</div>
+        <div>
+          <div class="ex-card-title">Relatórios PDF &amp; Excel</div>
+          <div class="ex-card-subtitle">Gerados sob demanda ou agendados · salvos nos artefatos · pode enviar por e-mail</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Gere um relatório PDF de produção da semana atual</span><button class="ex-copy" onclick="_exCopy(this,'Gere um relatório PDF de produção da semana atual')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Crie uma planilha Excel com os dados de defeitos dos últimos 30 dias</span><button class="ex-copy" onclick="_exCopy(this,'Crie uma planilha Excel com os dados de defeitos dos últimos 30 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Gere um relatório PDF de OEE por linha do mês atual com gráficos</span><button class="ex-copy" onclick="_exCopy(this,'Gere um relatório PDF de OEE por linha do mês atual com gráficos')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Crie um Excel com produção, FPY e OEE por turno da última semana</span><button class="ex-copy" onclick="_exCopy(this,'Crie um Excel com produção, FPY e OEE por turno da última semana')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Gere um relatório PDF comparando o desempenho das linhas nos últimos 7 dias</span><button class="ex-copy" onclick="_exCopy(this,'Gere um relatório PDF comparando o desempenho das linhas nos últimos 7 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Crie uma planilha com todas as ordens de produção do mês com status e eficiência</span><button class="ex-copy" onclick="_exCopy(this,'Crie uma planilha com todas as ordens de produção do mês com status e eficiência')">↗ copiar</button></div>
+    </div>
+
+    <!-- ── AGENDAMENTO DE RELATÓRIOS ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">🗓️</div>
+        <div>
+          <div class="ex-card-title">Agendamento de Tarefas</div>
+          <div class="ex-card-subtitle">Execução autônoma mesmo com a plataforma fechada · resultados nos artefatos · pode enviar e-mail</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Agenda um relatório diário de produção todo dia às 7h<em>PDF gerado automaticamente e salvo nos artefatos </em></span><button class="ex-copy" onclick="_exCopy(this,'Agenda um relatório diário de produção todo dia às 7h')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Agende um relatório semanal de FPY e defeitos toda segunda às 8h<em>Planilha ou PDF salvo nos artefatos toda semana sem intervenção</em></span><button class="ex-copy" onclick="_exCopy(this,'Agende um relatório semanal de FPY e defeitos toda segunda às 8h')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Crie uma tarefa que roda todo dia 1º do mês com resumo do mês anterior</span><button class="ex-copy" onclick="_exCopy(this,'Crie uma tarefa que roda todo dia 1º do mês com resumo do mês anterior')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Agende um relatório de OEE a cada 6 horas</span><button class="ex-copy" onclick="_exCopy(this,'Agende um relatório de OEE a cada 6 horas')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Liste todas as tarefas agendadas</span><button class="ex-copy" onclick="_exCopy(this,'Liste todas as tarefas agendadas')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Pause a tarefa 3</span><button class="ex-copy" onclick="_exCopy(this,'Pause a tarefa 3')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Delete a tarefa 5</span><button class="ex-copy" onclick="_exCopy(this,'Delete a tarefa 5')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Editar tarefa 2<em>Edita código, período, métricas ou visual de qualquer tarefa existente</em></span><button class="ex-copy" onclick="_exCopy(this,'Editar tarefa 2')">↗ copiar</button></div>
+    </div>
+
+    <!-- ── MONITORES E ALERTAS ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">🔔</div>
+        <div>
+          <div class="ex-card-title">Monitores &amp; Alertas</div>
+          <div class="ex-card-subtitle">Criados como tarefas agendadas · verificação a cada 5 min · notificação no painel de alertas · pode enviar e-mail</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Me avise se o OEE cair abaixo de 75%<em>Verifica a cada 5 min e notifica quando o threshold for cruzado</em></span><button class="ex-copy" onclick="_exCopy(this,'Me avise se o OEE cair abaixo de 75%')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Crie um monitor que alerte se a produção passar 2000 unidades no dia</span><button class="ex-copy" onclick="_exCopy(this,'Crie um monitor que alerte se a produção passar 2000 unidades no dia')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Me notifique quando a Linha 1 ficar inoperante</span><button class="ex-copy" onclick="_exCopy(this,'Me notifique quando a Linha 1 ficar inoperante')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Alerta se o FPY cair abaixo de 90% em qualquer linha</span><button class="ex-copy" onclick="_exCopy(this,'Alerta se o FPY cair abaixo de 90% em qualquer linha')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Me avise se houver mais de 50 defeitos na categoria "Dimensional" hoje</span><button class="ex-copy" onclick="_exCopy(this,'Me avise se houver mais de 50 defeitos na categoria Dimensional hoje')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Monitore a eficiência do turno B e me notifique se cair abaixo de 80%</span><button class="ex-copy" onclick="_exCopy(this,'Monitore a eficiência do turno B e me notifique se cair abaixo de 80%')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Me avise se o turno C produzir menos que o turno A no mesmo dia</span><button class="ex-copy" onclick="_exCopy(this,'Me avise se o turno C produzir menos que o turno A no mesmo dia')">↗ copiar</button></div>
+      <div style="padding:10px 18px;background:rgba(248,113,113,0.04);border-top:1px solid #1e2d3d;display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;">
+        <span style="flex-shrink:0;">🔔</span><span><strong style="color:#475569;">Monitores são tarefas</strong> — o agente cria um monitor como uma tarefa agendada comum. Para editar o threshold, pausar ou deletar, use os mesmos comandos de tarefas: "editar tarefa [ID]", "pause a tarefa [ID]". Para receber também por e-mail, peça ao criar o monitor.</span>
+      </div>
+    </div>
+
+    <!-- ── PAINÉIS CUSTOMIZADOS ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">📌</div>
+        <div>
+          <div class="ex-card-title">Painéis Customizados no Dashboard</div>
+          <div class="ex-card-subtitle">Gráficos permanentes salvos por usuário · editáveis e reordenáveis a qualquer momento</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Adiciona ao dashboard um gráfico de barras com produção diária dos últimos 7 dias<em>Painel permanente, reaparece a cada abertura da página</em></span><button class="ex-copy" onclick="_exCopy(this,'Adiciona ao dashboard um gráfico de barras com produção diária dos últimos 7 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Insere no dashboard um gráfico de pizza com defeitos por categoria do mês</span><button class="ex-copy" onclick="_exCopy(this,'Insere no dashboard um gráfico de pizza com defeitos por categoria do mês')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Cria um painel com gráfico de linha mostrando OEE dos últimos 14 dias por linha</span><button class="ex-copy" onclick="_exCopy(this,'Cria um painel com gráfico de linha mostrando OEE dos últimos 14 dias por linha')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Coloca no dashboard um gráfico de rosca com distribuição de turnos por produção</span><button class="ex-copy" onclick="_exCopy(this,'Coloca no dashboard um gráfico de rosca com distribuição de turnos por produção')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Liste os painéis no dashboard</span><button class="ex-copy" onclick="_exCopy(this,'Liste os painéis no dashboard')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Altere o gráfico de pizza para ter cores mais sóbrias<em>Edita in-place sem deletar — use o nome ou ID do painel</em></span><button class="ex-copy" onclick="_exCopy(this,'Altere o gráfico de pizza para ter cores mais sóbrias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Remove o painel de produção diária</span><button class="ex-copy" onclick="_exCopy(this,'Remove o painel de produção diária')">↗ copiar</button></div>
+      <div style="padding:10px 18px;background:rgba(167,139,250,0.04);border-top:1px solid #1e2d3d;display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;">
+        <span style="flex-shrink:0;">📌</span><span><strong style="color:#475569;">Fixar do chat</strong> — qualquer gráfico gerado no chat pode virar painel permanente: basta dizer "adiciona esse ao dashboard".</span>
+      </div>
+    </div>
+
+    <!-- ── ANÁLISE VISUAL DO DASHBOARD ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">👁️</div>
+        <div>
+          <div class="ex-card-title">Análise Visual</div>
+          <div class="ex-card-subtitle">Analisa o que está na tela · aceita imagens e recortes do dashboard como contexto</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">O que está no dashboard agora? Resuma os principais números<em>Usa get_dashboard_charts — não precisa de imagem</em></span><button class="ex-copy" onclick="_exCopy(this,'O que está no dashboard agora? Resuma os principais números')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Quantos alertas estão ativos no momento?</span><button class="ex-copy" onclick="_exCopy(this,'Quantos alertas estão ativos no momento?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">O que mostra o gráfico de OEE atual? Há alguma anomalia?</span><button class="ex-copy" onclick="_exCopy(this,'O que mostra o gráfico de OEE atual? Há alguma anomalia?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Analise este gráfico <span class="ex-tag tag-purple">+ recorte de tela</span><em>Clique no botão 📷 no chat, arraste para selecionar a área e confirme</em></span><button class="ex-copy" onclick="_exCopy(this,'Analise este gráfico para mim')">↗ copiar</button></div>
+
+      <div style="padding:10px 18px;background:rgba(56,189,248,0.04);border-top:1px solid #1e2d3d;display:flex;gap:7px;align-items:flex-start;font-size:11px;color:#64748b;">
+        <span style="flex-shrink:0;">📷</span><span><strong style="color:#475569;">Recorte de tela</strong> — clique no botão 📷 no campo do chat, arraste para selecionar a área desejada e confirme. A imagem é anexada automaticamente à próxima mensagem.</span>
+      </div>
+    </div>
+
+    <!-- ── CONCEITOS E DOMÍNIO ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">📚</div>
+        <div>
+          <div class="ex-card-title">Perguntas Conceituais</div>
+          <div class="ex-card-subtitle">Explica KPIs, linhas, turnos, capacidades do agente e como os dados são estruturados</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">O que é FPY e como é calculado?</span><button class="ex-copy" onclick="_exCopy(this,'O que é FPY e como é calculado?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Como é calculado o OEE neste sistema?</span><button class="ex-copy" onclick="_exCopy(this,'Como é calculado o OEE neste sistema?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Quais linhas e turnos existem na fábrica?</span><button class="ex-copy" onclick="_exCopy(this,'Quais linhas e turnos existem na fábrica?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">O que você consegue fazer? Liste suas capacidades</span><button class="ex-copy" onclick="_exCopy(this,'O que você consegue fazer? Liste suas capacidades')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Como funciona o agendamento de tarefas?</span><button class="ex-copy" onclick="_exCopy(this,'Como funciona o agendamento de tarefas?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Quais endpoints de dados você usa? Explique o schema</span><button class="ex-copy" onclick="_exCopy(this,'Quais endpoints de dados você usa? Explique o schema')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Como funciona a arquitetura multi-agente deste sistema?</span><button class="ex-copy" onclick="_exCopy(this,'Como funciona a arquitetura multi-agente deste sistema?')">↗ copiar</button></div>
+    </div>
+
+    <!-- ── TAREFAS AVANÇADAS ── -->
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div class="ex-card-icon">⚡</div>
+        <div>
+          <div class="ex-card-title">Análises Avançadas</div>
+          <div class="ex-card-subtitle">Código Python executado em sandbox · correlação, Pareto, teste t, ANOVA e qualquer cálculo personalizado</div>
+        </div>
+      </div>
+      <div class="ex-item"><span class="ex-text">Calcule a correlação entre defeitos e OEE nos últimos 30 dias</span><button class="ex-copy" onclick="_exCopy(this,'Calcule a correlação entre defeitos e OEE nos últimos 30 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Faça um teste t para comparar a produção do turno A vs turno B neste mês<em>Verifica se a diferença entre os turnos é estatisticamente significativa</em></span><button class="ex-copy" onclick="_exCopy(this,'Faça um teste t para comparar a produção do turno A vs turno B neste mês')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Rode uma ANOVA para comparar o FPY entre todas as linhas nos últimos 30 dias<em>Identifica se há diferença significativa de desempenho entre as linhas</em></span><button class="ex-copy" onclick="_exCopy(this,'Rode uma ANOVA para comparar o FPY entre todas as linhas nos últimos 30 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Faça uma análise de Pareto dos defeitos por categoria dos últimos 90 dias</span><button class="ex-copy" onclick="_exCopy(this,'Faça uma análise de Pareto dos defeitos por categoria dos últimos 90 dias')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Compare o desempenho do mês atual vs mês anterior em todas as métricas</span><button class="ex-copy" onclick="_exCopy(this,'Compare o desempenho do mês atual vs mês anterior em todas as métricas')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Qual turno tem a maior variabilidade de produção nos últimos 30 dias?</span><button class="ex-copy" onclick="_exCopy(this,'Qual turno tem a maior variabilidade de produção nos últimos 30 dias?')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Gere um heatmap de produção por dia da semana e turno do último mês</span><button class="ex-copy" onclick="_exCopy(this,'Gere um heatmap de produção por dia da semana e turno do último mês')">↗ copiar</button></div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+function _exCopy(btn, text) {
+  const input = document.getElementById('chatInput');
+  if (input) {
+    input.value = text;
+    input.focus();
+    switchTab('dashboard');
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  } else {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+  btn.textContent = '✓ copiado';
+  btn.style.color = '#34d399';
+  btn.style.borderColor = '#34d399';
+  setTimeout(() => { btn.textContent = '↗ copiar'; btn.style.color = ''; btn.style.borderColor = ''; }, 1800);
+}
 </script>
 
 </body>
