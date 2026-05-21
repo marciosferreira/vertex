@@ -16,6 +16,8 @@ _MIN_INTERVAL_MINUTES = 5
 
 def _validate_frequency(frequency: str) -> str | None:
     """Retorna mensagem de erro se a frequência for inválida, None se OK."""
+    if frequency == 'on_demand':
+        return None
     m = _re.match(r'every_(\d+)m$', frequency)
     if m and int(m.group(1)) < _MIN_INTERVAL_MINUTES:
         return f"Intervalo mínimo permitido é {_MIN_INTERVAL_MINUTES} minutos. Use 'every_{_MIN_INTERVAL_MINUTES}m' ou maior."
@@ -42,6 +44,8 @@ def _freq_label(task: dict) -> str:
     import re
     freq = task.get('frequency', '')
     time_str = task.get('time', '')
+    if freq == 'on_demand':
+        return 'sob demanda'
     m = re.match(r'every_(\d+)m', freq)
     if m:
         return f"a cada {m.group(1)} min"
@@ -77,7 +81,8 @@ def _format_list(tasks: list[dict]) -> str:
         }.get(t.get('status', ''), t.get('status', ''))
         lines.append(f"**[{t['id']}]** {t.get('name', '?')}")
         lines.append(f"  Frequência : {_freq_label(t)}")
-        lines.append(f"  Próxima    : {t.get('next_run', 'N/A')}")
+        if t.get('frequency') != 'on_demand':
+            lines.append(f"  Próxima    : {t.get('next_run', 'N/A')}")
         lines.append(f"  Status     : {status_label}")
         if t.get('email'):
             lines.append(f"  Email      : {t['email']}")
@@ -139,8 +144,9 @@ def schedule_task(
                      linha toda segunda às 8h e envia por email."
         frequency: Frequência de execução. Valores aceitos:
                    "once" | "daily" | "weekly" | "monthly" |
-                   "every_Xm" (ex: "every_2m") | "every_Xh" | "every_Xd"
-        time: Hora no formato "HH:MM" (ex: "08:00").
+                   "every_Xm" (ex: "every_2m") | "every_Xh" | "every_Xd" |
+                   "on_demand" (sem agendamento — executa só quando o usuário clicar ▶ no painel)
+        time: Hora no formato "HH:MM" (ex: "08:00"). Ignorado se frequency="on_demand".
         instructions: Passo a passo detalhado de execução, incluindo os
                       trechos de código Python validados. Se fornecido, a
                       tarefa fica ativa imediatamente. Se omitido, fica com
@@ -172,8 +178,12 @@ def schedule_task(
         conn.commit()
 
     tasks = _all_tasks(user_id)
+    if frequency == 'on_demand':
+        schedule_info = "Execute quando quiser clicando em ▶ no painel de tarefas."
+    else:
+        schedule_info = f"Próxima execução agendada: {next_run}"
     return (
-        f"Tarefa **[{task_id}]** criada e ativa. Próxima execução agendada: {next_run}\n\n"
+        f"Tarefa **[{task_id}]** criada e ativa. {schedule_info}\n\n"
         + _format_list(tasks)
         + "\nPara remover tarefa redundante: **delete task [ID]**"
     )

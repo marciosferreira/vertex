@@ -13,7 +13,10 @@ def calculate_next_run(
     time_str: str,
     weekday: Optional[str] = None,
     day: Optional[str] = None,
-) -> str:
+) -> Optional[str]:
+    if frequency == 'on_demand':
+        return None
+
     now = datetime.now()
     try:
         h, m = map(int, time_str.split(':'))

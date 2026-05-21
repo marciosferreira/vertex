@@ -108,16 +108,25 @@ def shift_dates_to_today() -> int:
 
 
 def migrate_db():
-    """Adiciona colunas user_id às tabelas que precisam de isolamento por usuário."""
+    """Adiciona colunas e tabelas novas sem recriar o banco."""
     with get_db() as conn:
         for stmt in (
             "ALTER TABLE scheduled_tasks ADD COLUMN user_id TEXT",
             "ALTER TABLE threshold_alerts ADD COLUMN user_id TEXT",
+            # dashboard_widgets pode não existir em bancos antigos
+            """CREATE TABLE IF NOT EXISTS dashboard_widgets (
+                id          TEXT    PRIMARY KEY,
+                title       TEXT    NOT NULL,
+                description TEXT,
+                code        TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL,
+                user_id     TEXT
+            )""",
         ):
             try:
                 conn.execute(stmt)
             except Exception:
-                pass  # coluna já existe
+                pass  # coluna/tabela já existe
         conn.commit()
 
 
@@ -281,6 +290,16 @@ def init_db():
                 prod_id  INTEGER NOT NULL,
                 produced INTEGER NOT NULL,
                 PRIMARY KEY (date, prod_id)
+            );
+
+            -- Painéis de gráfico customizados criados sob demanda pelo agente
+            CREATE TABLE IF NOT EXISTS dashboard_widgets (
+                id          TEXT    PRIMARY KEY,
+                title       TEXT    NOT NULL,
+                description TEXT,
+                code        TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL,
+                user_id     TEXT
             );
         """)
         _seed(conn)

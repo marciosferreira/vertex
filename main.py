@@ -179,6 +179,7 @@ def _demo_reset():
             conn.execute("DELETE FROM scheduled_tasks")
             conn.execute("DELETE FROM task_runs")
             conn.execute("DELETE FROM task_code_versions")
+            conn.execute("DELETE FROM dashboard_widgets")
             conn.execute("UPDATE task_id_sequence SET next_id = 1 WHERE id = 1")
             # Limpa tabelas do checkpointer LangGraph (histórico de conversa)
             for tbl in ("checkpoints", "writes"):
@@ -746,6 +747,68 @@ def get_artifacts():
             a["origin"] = "chat"
             a["task_id"] = None
     return artifacts
+
+
+# ── painéis customizados do dashboard ────────────────────────────────────────
+
+@app.get("/dashboard-widgets")
+def get_dashboard_widgets(user_id: str = Query(default=None)):
+    """Lista os painéis customizados do dashboard para um usuário."""
+    with get_db() as conn:
+        if user_id:
+            rows = conn.execute(
+                "SELECT id, title, description, created_at FROM dashboard_widgets "
+                "WHERE user_id=? OR user_id IS NULL ORDER BY created_at ASC",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, title, description, created_at FROM dashboard_widgets ORDER BY created_at ASC"
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/dashboard-widgets/{widget_id}/data")
+def get_dashboard_widget_data(widget_id: str):
+    """Re-executa o widget_code e retorna a configuração Chart.js atualizada."""
+    from scheduler.widget_runner import run_widget_code, default_test_range, WidgetCodeError
+    from datetime import datetime as _dt
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT code FROM dashboard_widgets WHERE id = ?", (widget_id,)
+        ).fetchone()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": True, "message": "Painel não encontrado."})
+
+    from_date, to_date = default_test_range()
+    session_id = f"widget_{widget_id[:8]}_{_dt.now().strftime('%Y%m%d%H%M%S')}"
+    try:
+        config = run_widget_code(row["code"], from_date, to_date, session_id)
+    except WidgetCodeError as e:
+        return JSONResponse(status_code=422, content={"error": True, "message": str(e)})
+    except Exception as e:
+        logger.exception("Erro ao executar widget %s", widget_id)
+        return JSONResponse(status_code=500, content={"error": True, "message": str(e)})
+
+    return config
+
+
+@app.delete("/dashboard-widgets/{widget_id}")
+def delete_dashboard_widget_endpoint(widget_id: str, user_id: str = Query(default=None)):
+    """Remove um painel customizado do dashboard."""
+    with get_db() as conn:
+        query = "SELECT id FROM dashboard_widgets WHERE id = ?"
+        params = [widget_id]
+        if user_id:
+            query += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(user_id)
+        row = conn.execute(query, params).fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": True, "message": "Painel não encontrado."})
+        conn.execute("DELETE FROM dashboard_widgets WHERE id = ?", (widget_id,))
+        conn.commit()
+    return {"ok": True, "deleted": widget_id}
 
 
 @app.delete("/artifacts/{artifact_type}/{artifact_id}")

@@ -56,6 +56,12 @@ from scheduler.tools import (
     get_task_code_versions,
     restore_task_code_version,
 )
+from scheduler.widget_tools import (
+    add_chart_to_dashboard,
+    test_widget_code,
+    list_dashboard_widgets,
+    delete_dashboard_widget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +275,10 @@ _TOOL_LABELS: dict[str, str] = {
     "save_task_code":           "💾 Salvando código da tarefa",
     "get_task_code_versions":   "📜 Listando versões do código",
     "restore_task_code_version": "↩️ Restaurando versão do código",
+    "test_widget_code":          "🧪 Testando código do painel customizado",
+    "add_chart_to_dashboard":    "📌 Adicionando painel ao dashboard",
+    "list_dashboard_widgets":    "📋 Listando painéis customizados",
+    "delete_dashboard_widget":   "🗑️ Removendo painel do dashboard",
 }
 
 
@@ -1452,6 +1462,16 @@ def _build_orchestrator(llm, checkpointer=None):
         "     → Se a pergunta envolver o SIGNIFICADO de uma métrica (o que é FPY, como se calcula\n"
         "       OEE, o que representa downtime), chame rag() em seguida para complementar.\n"
         "     → NÃO chame consultar_analista — os dados relevantes já estão na tela.\n\n"
+        "  F) PAINEL CUSTOMIZADO NO DASHBOARD — o usuário quer ADICIONAR, INSERIR, FIXAR ou REMOVER\n"
+        "     um gráfico como painel permanente no dashboard (seção 'Painéis Customizados').\n"
+        "     Palavras-chave OBRIGATÓRIAS: 'adiciona ao dashboard', 'insere no dashboard',\n"
+        "     'quero ver no dashboard', 'cria um painel com', 'fixar no dashboard',\n"
+        "     'coloca no dashboard', 'remove o painel', 'lista os painéis'.\n"
+        "     ⚠️ NÃO confunda com pedidos de gráfico no chat (categoria A).\n"
+        "     Um gráfico no chat é temporário. Um painel no dashboard é permanente.\n"
+        "     → Siga o fluxo de painel customizado detalhado abaixo.\n\n"
+        "REGRA CRÍTICA: na dúvida entre A e F, escolha A. NUNCA adicione um painel ao dashboard\n"
+        "sem que o usuário tenha usado explicitamente palavras de inserção no dashboard (categoria F).\n\n"
         "## Análise de imagens do dashboard\n"
         "Quando o usuário envia uma imagem junto com sua mensagem, trata-se de um recorte da\n"
         "própria tela do dashboard — pode conter gráficos de produção, FPY, OEE, defeitos,\n"
@@ -1600,6 +1620,54 @@ def _build_orchestrator(llm, checkpointer=None):
         "- Dizer 'tarefa atualizada' sem ter chamado save_task_code é errado.\n"
         "- test_task_code e save_task_code recebem SEMPRE o código completo — não um diff.\n\n"
         "Para listar, pausar ou deletar tarefas, use gerenciar_agenda normalmente.\n\n"
+        "## Painéis customizados no dashboard — fluxo obrigatório ao CRIAR\n"
+        "Quando o usuário pedir para ADICIONAR/INSERIR/FIXAR um gráfico no dashboard,\n"
+        "siga EXATAMENTE estes passos:\n\n"
+        "1. Confirme a intenção antes de agir:\n"
+        "   Responda: 'Vou criar e fixar um painel [descrição] no dashboard. Confirma?'\n"
+        "   Aguarde confirmação. Se o usuário confirmar, prossiga.\n\n"
+        "2. Execute consultar_analista() com para_agendamento=True para descobrir\n"
+        "   os dados reais (endpoint, colunas, valores). Chame calcular_periodo() antes.\n"
+        "   ⛔ OBRIGATÓRIO — nunca escreva código sem ter observado os dados reais.\n\n"
+        "3. Escreva o widget_code com base no bloco task_context do passo 2.\n"
+        "   REGRAS CRÍTICAS DO WIDGET CODE (viole qualquer uma = erro garantido):\n\n"
+        "   ⛔ NUNCA use `import` dentro de run() — o sandbox bloqueia qualquer import.\n"
+        "      Variáveis pré-injetadas disponíveis: pd, np, ctx, from_date, to_date,\n"
+        "      date, datetime, timedelta. Use-as diretamente.\n\n"
+        "   ⛔ ctx.api() SEMPRE retorna lista Python (list[dict]). NUNCA é um DataFrame.\n"
+        "      Converta SEMPRE: `df = pd.DataFrame(ctx.api('/endpoint...'))`\n"
+        "      Acessar colunas antes de converter causa KeyError.\n\n"
+        "   ⛔ run() DEVE retornar um dict Chart.js com 'type' e 'data'.\n"
+        "      Tipos aceitos: bar, line, pie, doughnut, radar, polarArea.\n"
+        "      'data' deve ter: 'labels' (list[str]) e 'datasets' (list[dict]).\n"
+        "      Cada dataset: {'label': str, 'data': list[float]}.\n\n"
+        "   ⛔ NUNCA escreva datas específicas — use from_date/to_date recebidos como parâmetro.\n\n"
+        "   Template COMPLETO e correto (copie e adapte):\n"
+        "   ```python\n"
+        "   def run(from_date, to_date, ctx):\n"
+        "       raw = ctx.api(f'/defects?from={from_date}&to={to_date}')\n"
+        "       df = pd.DataFrame(raw)  # OBRIGATÓRIO: converter list→DataFrame\n"
+        "       labels = df['category'].tolist()\n"
+        "       values = df['count'].tolist()\n"
+        "       return {\n"
+        "           'type': 'pie',\n"
+        "           'data': {\n"
+        "               'labels': labels,\n"
+        "               'datasets': [{'label': 'Defeitos', 'data': values}]\n"
+        "           }\n"
+        "       }\n"
+        "   ```\n\n"
+        "4. Chame test_widget_code(title=TÍTULO, code=CÓDIGO) para validar.\n"
+        "   Se retornar erro, leia a mensagem, corrija O ERRO EXATO e teste novamente.\n"
+        "   Erros comuns: (a) import bloqueado → remova o import, use a variável pré-injetada;\n"
+        "   (b) KeyError/AttributeError → você esqueceu o pd.DataFrame() após ctx.api().\n"
+        "   NUNCA avance com erro.\n\n"
+        "5. Chame add_chart_to_dashboard(title=TÍTULO, description=DESCRIÇÃO, code=CÓDIGO).\n\n"
+        "6. Responda: 'Painel **[título]** adicionado ao dashboard. "
+        "Ele aparece na seção Painéis Customizados ao final da página.'\n\n"
+        "## Painéis customizados — listar e remover\n"
+        "- Para LISTAR painéis: chame list_dashboard_widgets().\n"
+        "- Para REMOVER um painel: chame delete_dashboard_widget(widget_id=ID).\n\n"
         "## RACIOCÍNIO OBRIGATÓRIO\n"
         "SEMPRE que for chamar uma tool, você DEVE incluir na mesma resposta um texto curto "
         "em linguagem natural explicando o que vai fazer e por quê, ANTES do bloco de função. "
@@ -1616,6 +1684,8 @@ def _build_orchestrator(llm, checkpointer=None):
         gerenciar_agenda,
         set_task_instructions,
         get_task_code, test_task_code, save_task_code,
+        test_widget_code, add_chart_to_dashboard,
+        list_dashboard_widgets, delete_dashboard_widget,
     ]
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)

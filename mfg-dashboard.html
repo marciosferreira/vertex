@@ -1130,6 +1130,18 @@
 
 </div>
 
+<!-- ── Painéis Customizados ──────────────────────────────────────────────── -->
+<div id="customWidgetsSection" style="display:none;padding:0 24px 32px;">
+  <div class="section-bar" style="margin-bottom:16px;">
+    <div class="section-lbl">Painéis Customizados</div>
+    <button class="refresh-btn" onclick="loadCustomWidgets()" title="Atualizar painéis" style="gap:4px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Atualizar
+    </button>
+  </div>
+  <div id="customWidgetsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;"></div>
+</div>
+
 </div><!-- /.main-wrap -->
 
 <div id="chatBackdrop" onclick="closeChat()"></div>
@@ -1559,11 +1571,177 @@ async function refreshAll() {
     refreshKPIs(), refreshProd(), refreshFpy(),
     refreshLineComp(), refreshOee(), refreshShiftEff(),
     refreshHour(), refreshDefCat(), refreshDefTrend(),
-    refreshLineStatus()
+    refreshLineStatus(), loadCustomWidgets()
   ]);
   document.getElementById('lastUpdate').textContent =
     'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour12: false });
   btn.classList.remove('spinning');
+}
+
+// ── CUSTOM WIDGETS ────────────────────────────────────
+let _widgetCharts = {};  // widget_id → Chart instance
+let _widgetDragSrc = null;
+
+// Persistência da ordem no localStorage
+function _widgetOrderKey() { return 'widget_order_' + _userId; }
+function _saveWidgetOrder() {
+  const grid = document.getElementById('customWidgetsGrid');
+  const ids = [...grid.children].map(c => c.dataset.widgetId).filter(Boolean);
+  localStorage.setItem(_widgetOrderKey(), JSON.stringify(ids));
+}
+function _applyWidgetOrder(widgets) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(_widgetOrderKey()) || '[]');
+    if (!saved.length) return widgets;
+    const map = Object.fromEntries(widgets.map(w => [w.id, w]));
+    const ordered = saved.filter(id => map[id]).map(id => map[id]);
+    const rest = widgets.filter(w => !saved.includes(w.id));
+    return [...ordered, ...rest];
+  } catch { return widgets; }
+}
+
+async function loadCustomWidgets() {
+  const section = document.getElementById('customWidgetsSection');
+  const grid    = document.getElementById('customWidgetsGrid');
+  try {
+    const raw = await fetch(`${API_BASE}/dashboard-widgets?user_id=${_userId}`).then(r => r.json());
+    if (!Array.isArray(raw) || raw.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    const widgets = _applyWidgetOrder(raw);
+
+    // Destroy charts de widgets removidos
+    const currentIds = new Set(widgets.map(w => w.id));
+    for (const [id, chart] of Object.entries(_widgetCharts)) {
+      if (!currentIds.has(id)) { chart.destroy(); delete _widgetCharts[id]; }
+    }
+
+    // Upsert cards na ordem correta
+    for (const w of widgets) {
+      let card = document.getElementById('widget-card-' + w.id);
+      if (!card) {
+        card = document.createElement('div');
+        card.id = 'widget-card-' + w.id;
+        card.dataset.widgetId = w.id;
+        card.className = 'card';
+        card.style.cssText = 'overflow:hidden;transition:opacity .15s,box-shadow .15s;';
+        card.draggable = true;
+        card.innerHTML = `
+          <div class="card-head" style="display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:grab;"
+               title="Arraste para reordenar">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;opacity:.4;">
+              <circle cx="4" cy="3" r="1.2" fill="currentColor"/>
+              <circle cx="8" cy="3" r="1.2" fill="currentColor"/>
+              <circle cx="4" cy="6" r="1.2" fill="currentColor"/>
+              <circle cx="8" cy="6" r="1.2" fill="currentColor"/>
+              <circle cx="4" cy="9" r="1.2" fill="currentColor"/>
+              <circle cx="8" cy="9" r="1.2" fill="currentColor"/>
+            </svg>
+            <span class="card-title" style="flex:1;font-size:12px;font-weight:600;color:#e2e8f0;letter-spacing:.02em;">${_escHtml(w.title)}</span>
+            <button onclick="removeWidget('${w.id}')" title="Remover painel"
+              style="background:none;border:none;cursor:pointer;color:#475569;font-size:16px;line-height:1;padding:2px 4px;">&times;</button>
+          </div>
+          <div class="card-body" style="padding:8px 16px 16px;">
+            <div style="height:220px;position:relative;"><canvas id="wcanvas-${w.id}"></canvas></div>
+            <div id="werr-${w.id}" style="display:none;color:#f87171;font-size:11px;padding:4px 0;"></div>
+          </div>`;
+
+        // Drag & drop handlers
+        card.addEventListener('dragstart', e => {
+          _widgetDragSrc = card;
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', w.id);
+          setTimeout(() => card.style.opacity = '0.4', 0);
+        });
+        card.addEventListener('dragend', () => {
+          card.style.opacity = '';
+          card.style.boxShadow = '';
+          document.querySelectorAll('#customWidgetsGrid .card').forEach(c => c.style.boxShadow = '');
+          _saveWidgetOrder();
+        });
+        card.addEventListener('dragover', e => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (_widgetDragSrc && _widgetDragSrc !== card) {
+            card.style.boxShadow = '0 0 0 2px #6366f1';
+          }
+        });
+        card.addEventListener('dragleave', () => { card.style.boxShadow = ''; });
+        card.addEventListener('drop', e => {
+          e.preventDefault();
+          card.style.boxShadow = '';
+          if (!_widgetDragSrc || _widgetDragSrc === card) return;
+          const g = document.getElementById('customWidgetsGrid');
+          const nodes = [...g.children];
+          const srcIdx = nodes.indexOf(_widgetDragSrc);
+          const dstIdx = nodes.indexOf(card);
+          if (srcIdx < dstIdx) g.insertBefore(_widgetDragSrc, card.nextSibling);
+          else g.insertBefore(_widgetDragSrc, card);
+        });
+
+        grid.appendChild(card);
+      } else {
+        // Card já existe: garante posição segundo a ordem salva
+        grid.appendChild(card);
+      }
+      _renderWidget(w.id);
+    }
+  } catch(e) {
+    console.warn('loadCustomWidgets error', e);
+  }
+}
+
+async function _renderWidget(widgetId) {
+  const errEl = document.getElementById('werr-' + widgetId);
+  try {
+    const config = await fetch(`${API_BASE}/dashboard-widgets/${widgetId}/data`).then(r => r.json());
+    if (config.error) { _widgetError(widgetId, config.message); return; }
+
+    const canvas = document.getElementById('wcanvas-' + widgetId);
+    if (!canvas) return;
+
+    if (_widgetCharts[widgetId]) { _widgetCharts[widgetId].destroy(); }
+    _widgetCharts[widgetId] = new Chart(canvas, {
+      type: config.type,
+      data: config.data,
+      options: Object.assign({
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+          tooltip: { backgroundColor: '#1e293b', titleColor: '#e2e8f0', bodyColor: '#94a3b8' }
+        },
+        scales: ['bar','line','scatter'].includes(config.type) ? {
+          x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+        } : undefined
+      }, config.options || {}),
+    });
+    if (errEl) errEl.style.display = 'none';
+  } catch(e) {
+    _widgetError(widgetId, 'Erro ao carregar dados do painel.');
+  }
+}
+
+function _widgetError(widgetId, msg) {
+  const errEl = document.getElementById('werr-' + widgetId);
+  if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
+}
+
+async function removeWidget(widgetId) {
+  if (!confirm('Remover este painel do dashboard?')) return;
+  try {
+    await fetch(`${API_BASE}/dashboard-widgets/${widgetId}?user_id=${_userId}`, { method: 'DELETE' });
+    if (_widgetCharts[widgetId]) { _widgetCharts[widgetId].destroy(); delete _widgetCharts[widgetId]; }
+    const card = document.getElementById('widget-card-' + widgetId);
+    if (card) card.remove();
+    _saveWidgetOrder();
+    if (!document.getElementById('customWidgetsGrid').children.length)
+      document.getElementById('customWidgetsSection').style.display = 'none';
+  } catch(e) { alert('Erro ao remover painel.'); }
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── INIT ──────────────────────────────────────────────
@@ -1578,7 +1756,7 @@ async function initDashboard() {
       refreshKPIs(), refreshProd(), refreshFpy(),
       refreshLineComp(), refreshOee(), refreshShiftEff(),
       refreshHour(), refreshDefCat(), refreshDefTrend(),
-      refreshLineStatus()
+      refreshLineStatus(), loadCustomWidgets()
     ]);
     document.getElementById('lastUpdate').textContent =
       'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour12: false });
@@ -1629,10 +1807,6 @@ function newChat() {
 }
 
 // ── Conversation history ───────────────────────────────
-
-function _escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
 
 async function loadSessions() {
   const list = document.getElementById('chatHistList');
@@ -2207,6 +2381,8 @@ async function sendChat() {
       _addArtifactToChat(ev.token, ev.task_id, false);
     } else if (ev.type === 'artifact_saved') {
       _markLastArtifactSaved();
+    } else if (ev.type === 'widget_added') {
+      loadCustomWidgets();
     } else if (ev.type === 'reply') {
       es.close();
       _finalizeThinking(ids, hasEvents);
@@ -2964,6 +3140,7 @@ const FREQ_LABELS = {
 function freqLabel(t) {
   const f = t.frequency || '';
   const time = t.time || '';
+  if (f === 'on_demand') return 'Sob demanda';
   const mM = f.match(/^every_(\d+)m$/);
   const mH = f.match(/^every_(\d+)h$/);
   const mD = f.match(/^every_(\d+)d$/);
@@ -3074,10 +3251,10 @@ function renderTaskCard(t) {
         <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">FREQUÊNCIA</div>
         <div style="font-size:12px;color:#94a3b8;">${freqLabel(t)}</div>
       </div>
-      <div>
+      ${t.frequency !== 'on_demand' ? `<div>
         <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">PRÓXIMA EXEC.</div>
         <div style="font-size:12px;color:#38bdf8;">${t.next_run || '—'}</div>
-      </div>
+      </div>` : '<div></div>'}
       ${t.email ? `<div style="grid-column:1/-1;">
         <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:2px;">EMAIL</div>
         <div style="font-size:12px;color:#94a3b8;word-break:break-all;">${t.email}</div>

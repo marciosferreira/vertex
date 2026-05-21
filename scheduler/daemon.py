@@ -88,7 +88,7 @@ def _date_range_for_task(task: dict) -> tuple[str, str]:
         delta = 7
     elif freq == 'monthly':
         delta = 30
-    elif freq == 'once':
+    elif freq in ('once', 'on_demand'):
         delta = 7
     else:
         m = re.match(r'every_(\d+)d', freq)

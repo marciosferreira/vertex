@@ -1,0 +1,194 @@
+"""
+LangChain tools para gerenciar painéis de gráficos customizados do dashboard.
+
+REGRA CRÍTICA: add_chart_to_dashboard deve ser chamada SOMENTE quando o usuário
+pedir EXPLICITAMENTE para ADICIONAR/INSERIR/FIXAR um gráfico no dashboard.
+NÃO usar para gerar gráficos normais no chat.
+"""
+
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from langchain_core.tools import tool
+
+from db import get_db
+from .widget_runner import run_widget_code, default_test_range, WidgetCodeError
+
+
+def _current_user_id() -> str | None:
+    try:
+        from agent_multi import _current_session
+        sid = _current_session.get("")
+        return sid[:36] if sid else None
+    except Exception:
+        return None
+
+
+def _all_widgets(user_id: str | None = None) -> list[dict]:
+    with get_db() as conn:
+        if user_id:
+            rows = conn.execute(
+                "SELECT id, title, description, created_at FROM dashboard_widgets "
+                "WHERE user_id=? OR user_id IS NULL ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, title, description, created_at FROM dashboard_widgets ORDER BY created_at DESC"
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _format_widgets(widgets: list[dict]) -> str:
+    if not widgets:
+        return "Nenhum painel customizado no dashboard."
+    lines = [f"**{len(widgets)} painel(is) customizado(s) no dashboard:**\n"]
+    for w in widgets:
+        lines.append(f"  **[{w['id'][:8]}...]** {w['title']}")
+        if w.get("description"):
+            lines.append(f"    {w['description']}")
+        lines.append(f"    Criado em: {w['created_at']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@tool
+def test_widget_code(title: str, code: str, from_date: str = "", to_date: str = "") -> str:
+    """Valida widget_code antes de salvar no dashboard.
+
+    O código deve definir `def run(from_date, to_date, ctx)` e retornar um dict
+    Chart.js com as chaves 'type' e 'data'. Tipos aceitos: bar, line, pie,
+    doughnut, radar, polarArea, scatter, bubble.
+
+    Use SEMPRE antes de add_chart_to_dashboard para garantir que o código funciona.
+
+    Args:
+        title: Título do painel (usado apenas para identificação no teste).
+        code: Código Python completo com `def run(from_date, to_date, ctx)`.
+        from_date: Data inicial YYYY-MM-DD (padrão: 7 dias atrás).
+        to_date: Data final YYYY-MM-DD (padrão: hoje).
+    """
+    if not from_date or not to_date:
+        from_date, to_date = default_test_range()
+
+    session_id = f"widget_test_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    try:
+        config = run_widget_code(code, from_date, to_date, session_id)
+        chart_type = config.get("type", "?")
+        labels = config.get("data", {}).get("labels", [])
+        datasets = config.get("data", {}).get("datasets", [])
+        return (
+            f"✅ **Teste bem-sucedido!** Período: {from_date} → {to_date}\n"
+            f"Tipo: {chart_type} | Labels: {len(labels)} | Datasets: {len(datasets)}\n"
+            f"Exemplo de labels: {labels[:5]}"
+        )
+    except WidgetCodeError as e:
+        return f"❌ **Erro no código:**\n```\n{e}\n```\nCorreja e teste novamente antes de salvar."
+    except Exception as e:
+        return f"❌ **Erro inesperado:**\n```\n{e}\n```"
+
+
+@tool
+def add_chart_to_dashboard(title: str, description: str, code: str) -> str:
+    """Adiciona um painel de gráfico customizado e persistente ao dashboard do usuário.
+
+    ⚠️  Use SOMENTE quando o usuário pedir EXPLICITAMENTE para ADICIONAR, INSERIR
+    ou FIXAR um gráfico no dashboard. NÃO use para gerar gráficos normais no chat.
+
+    Palavras que indicam intenção de inserir no dashboard:
+    'adiciona ao dashboard', 'insere no painel', 'quero ver no dashboard',
+    'cria um painel com', 'fixar no dashboard', 'coloca no dashboard'.
+
+    O código deve definir `def run(from_date, to_date, ctx)` retornando um dict
+    Chart.js {"type": ..., "data": {...}, "options": {...}}.
+    Use test_widget_code para validar ANTES de chamar esta tool.
+
+    Args:
+        title: Título exibido no painel (ex: "Defeitos por Categoria — Últimos 7 dias").
+        description: Descrição curta do que o painel mostra.
+        code: Código Python validado com `def run(from_date, to_date, ctx)`.
+    """
+    from_date, to_date = default_test_range()
+    session_id = f"widget_validate_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    # Valida antes de salvar
+    try:
+        run_widget_code(code, from_date, to_date, session_id)
+    except WidgetCodeError as e:
+        return (
+            f"❌ **Código inválido — painel NÃO foi salvo.**\n```\n{e}\n```\n"
+            "Corrija e use test_widget_code antes de tentar novamente."
+        )
+    except Exception as e:
+        return f"❌ **Erro inesperado na validação:**\n```\n{e}\n```"
+
+    widget_id = str(uuid.uuid4())
+    user_id = _current_user_id()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO dashboard_widgets (id, title, description, code, created_at, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (widget_id, title, description, code, now, user_id),
+        )
+        conn.commit()
+
+    # Notifica o frontend via SSE para atualizar a seção de painéis automaticamente
+    try:
+        from agent_multi import _push_event, _current_session
+        _push_event(_current_session.get(), {"type": "widget_added", "widget_id": widget_id})
+    except Exception:
+        pass
+
+    widgets = _all_widgets(user_id)
+    return (
+        f"✅ **Painel '{title}' adicionado ao dashboard.**\n"
+        f"ID: `{widget_id[:8]}...`\n\n"
+        "O painel aparecerá na seção **Painéis Customizados** ao final do dashboard "
+        "e será atualizado automaticamente a cada refresh.\n\n"
+        + _format_widgets(widgets)
+        + "\nPara remover: **remover painel [ID]**"
+    )
+
+
+@tool
+def list_dashboard_widgets() -> str:
+    """Lista todos os painéis customizados adicionados ao dashboard."""
+    return _format_widgets(_all_widgets(_current_user_id()))
+
+
+@tool
+def delete_dashboard_widget(widget_id: str) -> str:
+    """Remove um painel customizado do dashboard pelo ID (ou prefixo do ID).
+
+    Args:
+        widget_id: ID completo ou primeiros 8 caracteres do ID do painel.
+                   Use list_dashboard_widgets para ver os IDs.
+    """
+    user_id = _current_user_id()
+    with get_db() as conn:
+        # Aceita ID completo ou prefixo de 8 chars
+        if len(widget_id) == 8:
+            row = conn.execute(
+                "SELECT id, title FROM dashboard_widgets WHERE id LIKE ?",
+                (widget_id + "%",),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id, title FROM dashboard_widgets WHERE id = ?",
+                (widget_id,),
+            ).fetchone()
+        if not row:
+            return f"Painel '{widget_id}' não encontrado."
+        full_id = row["id"]
+        title = row["title"]
+        conn.execute("DELETE FROM dashboard_widgets WHERE id = ?", (full_id,))
+        conn.commit()
+
+    widgets = _all_widgets(user_id)
+    return (
+        f"✅ Painel **'{title}'** removido do dashboard.\n\n"
+        + _format_widgets(widgets)
+    )
