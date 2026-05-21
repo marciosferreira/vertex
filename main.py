@@ -48,7 +48,7 @@ except ImportError:
 import json
 import threading
 from sse_starlette.sse import EventSourceResponse
-from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent, set_chart_snapshot
+from agent_multi import init_multi_agent, invoke_multi_agent, is_multi_agent_ready, stream_multi_agent, set_chart_snapshot, ns_cleanup_loop
 from scheduler.daemon import scheduler_loop, _execute_task
 import chart_store as cs
 
@@ -227,6 +227,7 @@ async def startup():
         logger.info("Date shift inicial: +%d dia(s)", delta)
     asyncio.create_task(_daily_date_shifter())
     asyncio.create_task(scheduler_loop())
+    asyncio.create_task(ns_cleanup_loop())
 
 
 def default_range() -> tuple[str, str]:

@@ -1,0 +1,1 @@
+Alerta! Produção de hoje: 2793 unidades (acima de 2000).

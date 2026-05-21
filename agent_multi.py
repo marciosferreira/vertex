@@ -121,6 +121,7 @@ _BUILTINS_SKIP = {"pd", "np", "plt", "stats", "__builtins__", "__doc__", "__name
 _namespaces: dict = {}       # session → namespace dict
 _ns_last_access: dict = {}   # session → datetime do último acesso
 _ns_lock = threading.Lock()
+_NS_TTL_SECONDS = 600        # 10 minutos de inatividade
 
 
 def _ns_get() -> dict:
@@ -130,6 +131,21 @@ def _ns_get() -> dict:
             _namespaces[session] = {"pd": pd, "np": np, "plt": plt, "stats": scipy_stats}
         _ns_last_access[session] = datetime.now()
         return _namespaces[session]
+
+
+async def ns_cleanup_loop():
+    """Loop assíncrono que expira namespaces inativos. Registrar via asyncio.create_task no startup."""
+    import asyncio
+    while True:
+        await asyncio.sleep(60)
+        cutoff = datetime.now() - timedelta(seconds=_NS_TTL_SECONDS)
+        with _ns_lock:
+            expired = [s for s, t in _ns_last_access.items() if t < cutoff]
+            for s in expired:
+                _namespaces.pop(s, None)
+                _ns_last_access.pop(s, None)
+        if expired:
+            logger.info("Namespaces expirados removidos: %s", expired)
 
 
 _MAX_RESULT_ROWS = 15  # acima disso, resultado de DataFrame é descrito, não exibido completo
@@ -283,7 +299,6 @@ def _safe(text: str) -> str:
 
 
 def _pdf_render_table(pdf, rows: list[list[str]]) -> None:
-    from fpdf import FPDF
     if not rows:
         return
     col_n = max(len(r) for r in rows)
@@ -299,7 +314,11 @@ def _pdf_render_table(pdf, rows: list[list[str]]) -> None:
             pdf.set_fill_color(*fill)
             pdf.set_text_color(148, 163, 184)
         for cell in row[:col_n]:
-            pdf.cell(col_w, 5.5, _safe(cell[:35]), border=1, fill=True)
+            text = _safe(cell)
+            # Truncate using real font metrics so text never exceeds cell width
+            while text and pdf.get_string_width(text) > col_w - 1:
+                text = text[:-1]
+            pdf.cell(col_w, 5.5, text, border=1, fill=True)
         pdf.ln()
     pdf.ln(3)
 
@@ -517,8 +536,13 @@ def gerar_excel(nome_dataframe: str, nome_arquivo: str, sheets: Optional[str] = 
     Use quando o usuário pedir Excel, planilha, xlsx ou spreadsheet.
     Não use para PDF (use gerar_pdf) nem para exibir tabela na tela.
 
-    Sempre chame consultar_analista(tipo='tabela') antes para carregar os dados.
-    O sub-agente retornará o nome do DataFrame (ex: 'producao', 'resultado').
+    Fluxo correto:
+      1. Chame consultar_analista(tipo='tabela') para carregar os dados no namespace.
+         O sub-agente retornará o nome do DataFrame (ex: 'producao', 'resultado').
+      2. Chame gerar_excel() passando o nome do DataFrame.
+      3. Responda ao usuário incluindo o token [excel:uuid] retornado — ele será
+         automaticamente convertido em link de download.
+
     Para múltiplas abas, use sheets='Aba1=df1,Aba2=df2'.
 
     Args:
@@ -849,6 +873,10 @@ def analisar_dataframe(script: str) -> str:
         if not parts:
             parts.append("Script executado (sem saída em `result`).")
 
+        history = ns.get("_script_history", [])
+        history.append({"query": ns.get("_current_query", ""), "script": script})
+        ns["_script_history"] = history[-3:]
+
         parts.append(_ns_summary(ns))
         saida = "\n\n".join(parts)
         _tlog("analisar_dataframe", "RETORNO", status="OK", saida=saida)
@@ -964,10 +992,20 @@ def _build_sub_agent(llm):
         "     - Você pode chamar analisar_dataframe() várias vezes para análises em etapas.\n"
         "     - Variáveis criadas em chamadas anteriores de analisar_dataframe continuam disponíveis.\n"
         "  4. Só então redija a resposta final.\n\n"
+        "## Modificação de gráfico ou análise já feita\n"
+        "Se o usuário pedir para alterar algo em um gráfico ou análise anterior "
+        "(cores, tipo de gráfico, estilo, filtro, agrupamento, etc.), "
+        "repita o fluxo completo (passos 1-3) usando os MESMOS parâmetros da análise anterior "
+        "— você os encontra no histórico da conversa — e aplique a modificação solicitada no script "
+        "passado para analisar_dataframe. NUNCA responda que não é possível modificar um gráfico.\n\n"
         "## Quando usar analise_sql_livre\n"
         "Se o pedido do usuário não puder ser atendido por nenhuma skill existente "
         "(cruzamentos entre tabelas, rankings, análises customizadas), use read_skill('analise_sql_livre.md') "
         "e depois executar_sql() para construir a query SQL adequada.\n\n"
+        "## Tipos de dados — invariantes globais\n"
+        "- A coluna `date` em TODOS os DataFrames é sempre string (TEXT/object). "
+        "Antes de qualquer operação com datas (strftime, sort por data, comparação, resample, etc.), "
+        "converta obrigatoriamente: `df['date'] = pd.to_datetime(df['date'])`.\n\n"
         "## Regras\n"
         "- NUNCA invente dados — use apenas resultados de analisar_dataframe.\n"
         "- Se analisar_dataframe retornar erro, corrija e chame novamente.\n"
@@ -1039,7 +1077,23 @@ def _build_sub_agent(llm):
 
     def no_sub_agente(state: State) -> dict:
         from langchain_core.messages import AIMessage as _AI
-        msgs = [SystemMessage(content=SUB_SYSTEM_PROMPT)] + list(state["messages"])
+        ns = _ns_get()
+        history = ns.get("_script_history", [])
+        if history:
+            lines = [
+                "\n\n## Scripts anteriores desta sessão",
+                "Os scripts abaixo foram executados em análises anteriores desta conversa.",
+                "Se o pedido atual for uma modificação de um desses gráficos/análises, use o "
+                "script correspondente como base — chame apenas analisar_dataframe() com o "
+                "script modificado, sem refazer read_skill nem chamar_api.\n",
+            ]
+            for i, entry in enumerate(history, 1):
+                lines.append(f"### Script {i} — pedido: \"{entry['query']}\"")
+                lines.append(f"```python\n{entry['script']}\n```")
+            extra = "\n".join(lines)
+        else:
+            extra = ""
+        msgs = [SystemMessage(content=SUB_SYSTEM_PROMPT + extra)] + list(state["messages"])
         _tlog("sub_agente", "LLM INVOCADO", mensagens=len(msgs))
         response = llm_sub.invoke(msgs)
 
@@ -1125,6 +1179,8 @@ def consultar_analista(detalhes: str, from_date: str, to_date: str, tipo: str = 
     """
     if _sub_agent_graph is None:
         return "Sub-agente analista não inicializado."
+    ns = _ns_get()
+    ns["_current_query"] = detalhes
     flags = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n[PERÍODO: from={from_date} to={to_date}]"
     if para_agendamento:
         flags += "\n[PARA_AGENDAMENTO]"
@@ -1417,6 +1473,10 @@ def _build_orchestrator(llm, checkpointer=None):
         "Se a pergunta for visual ('por que há um pico?', 'onde está a queda?', 'o que mostra\n"
         "o trecho X?') ou se os dados textuais do histórico forem insuficientes, chame\n"
         "ver_grafico(chart_id=UUID) — ela injeta a imagem no contexto para análise visual.\n"
+        "Se o usuário pedir uma MODIFICAÇÃO VISUAL do gráfico (cor, paleta, estilo, tipo de "
+        "gráfico, labels, título, etc.), chame consultar_analista novamente passando em `detalhes` "
+        "o pedido original completo E a modificação solicitada. Exemplo: 'Gráfico de produção "
+        "diária agregada por dia — mesmos dados e período, mas com paleta de cores cinza/preto.'\n"
         "O UUID está no histórico no formato [chart:UUID].\n\n"
         "REGRA CRÍTICA: na dúvida entre A e C, escolha A. Nunca inicie um fluxo de agendamento\n"
         "a menos que o usuário tenha usado explicitamente palavras de agendamento (categoria C).\n\n"
@@ -1432,7 +1492,10 @@ def _build_orchestrator(llm, checkpointer=None):
         "   exatamente como foram executados. Leia esse bloco com atenção.\n"
         "   ⛔ PROIBIDO pular este passo — mesmo para monitores simples, você NUNCA sabe\n"
         "   de antemão o nome exato das colunas, o endpoint correto ou o valor atual.\n"
-        "   Pular o passo 2 e adivinhar colunas gera task_code quebrado.\n\n"
+        "   Pular o passo 2 e adivinhar colunas gera task_code quebrado.\n"
+        "   ⚠️ OBRIGATÓRIO: antes de consultar_analista, chame calcular_periodo('hoje')\n"
+        "   para obter from_date e to_date corretos. NUNCA escreva datas manualmente —\n"
+        "   datas hardcoded ficam desatualizadas e causam falha na busca de dados.\n\n"
         "3. Escreva o task_code com base EXCLUSIVAMENTE no bloco task_context do passo 2.\n"
         "   REGRAS OBRIGATÓRIAS ao escrever o código:\n"
         "   a) NUNCA escreva datas específicas como '2026-05-18' — elas ficam desatualizadas.\n"
@@ -1679,9 +1742,6 @@ def invoke_multi_agent(query: str, session_id: str = "default") -> str:
     if _orchestrator_graph is None:
         raise RuntimeError("Multi-agente não inicializado.")
     _current_session.set(session_id)
-    with _ns_lock:
-        _namespaces.pop(session_id, None)
-        _ns_last_access.pop(session_id, None)
     resultado = _orchestrator_graph.invoke(
         {"messages": [_build_human_message(query, session_id)]},
         config={"configurable": {"thread_id": session_id}, "recursion_limit": 50},
@@ -1709,9 +1769,6 @@ def stream_multi_agent(query: str, session_id: str = "default"):
         return
 
     _current_session.set(session_id)
-    with _ns_lock:
-        _namespaces.pop(session_id, None)
-        _ns_last_access.pop(session_id, None)
 
     event_queue: _queue_module.Queue = _queue_module.Queue()
     with _eq_lock:
