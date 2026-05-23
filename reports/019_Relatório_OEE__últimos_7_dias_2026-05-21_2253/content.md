@@ -1,0 +1,1 @@
+OEE médio do período: 71.3%. OEE mais recente: 70.5%

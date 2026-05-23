@@ -168,9 +168,14 @@ def _execute_task(task: dict) -> None:
             tokens = run_task_code(task["task_code"], from_date, to_date, session_id, user_id=user_id)
             return " ".join(tokens)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(_run_code)
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = ex.submit(_run_code)
+        try:
             result = future.result(timeout=_TASK_TIMEOUT_SECONDS)
+        finally:
+            # shutdown(wait=False) evita bloquear o daemon enquanto a thread
+            # travada termina — sem isso o `with` esperaria eternamente
+            ex.shutdown(wait=False, cancel_futures=True)
 
         logger.info("[daemon] Task %s concluída (run #%d)", task_id, run_id)
 

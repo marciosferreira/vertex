@@ -8,14 +8,18 @@ linguagem natural.
 
 ## Linhas de produção e modelos
 
-| Linha   | Modelo        |
-|---------|---------------|
-| Linha 1 | PhoneX Pro    |
-| Linha 2 | PhoneX Lite   |
-| Linha 3 | PhoneX Ultra  |
-| Linha 4 | PhoneX Mini   |
+A fábrica tem 4 linhas de produção. **Cada linha é o identificador estável** — o modelo que ela produz pode mudar ao longo do tempo.
 
-Cada linha produz exclusivamente seu modelo. Filtrar por modelo é equivalente a filtrar pela linha.
+| Linha   | Modelo atual (pode mudar)  |
+|---------|----------------------------|
+| Linha 1 | PhoneX Pro                 |
+| Linha 2 | PhoneX Lite                |
+| Linha 3 | PhoneX Ultra               |
+| Linha 4 | PhoneX Mini                |
+
+> Os modelos acima refletem a atribuição atual. Para saber o modelo vigente de cada linha, consulte `/lines` (retorna `id`, `name`, `model`).
+>
+> **Sempre filtre por linha (`line=1`, `line=2`, etc.), nunca por nome de modelo.** O nome do modelo é informação de contexto — o filtro correto e estável é o número da linha.
 
 ## Turnos
 
@@ -27,7 +31,7 @@ Cada linha produz exclusivamente seu modelo. Filtrar por modelo é equivalente a
 
 ## KPIs do topo do dashboard
 
-Exibidos no cabeçalho com filtros de período, turno e modelo:
+Exibidos no cabeçalho com filtros de período, turno e linha:
 
 | KPI              | O que mostra                                                    |
 |------------------|-----------------------------------------------------------------|
@@ -46,7 +50,7 @@ Gráfico misto (barras + linha) mostrando volume diário de produção e defeito
 - **Produzido** (barras azuis): unidades finalizadas por dia
 - **Defeitos** (barras vermelhas): unidades com defeito por dia
 - **Meta** (linha tracejada cinza): meta diária planejada
-- Filtros: período (7d/14d/30d/hoje), turno (Todos/A/B/C), modelo
+- Filtros: período (7d/14d/30d/hoje), turno (Todos/A/B/C), linha
 
 ### First Pass Yield — histórico
 
@@ -56,7 +60,7 @@ Gráfico de linha mostrando a evolução do FPY ao longo do tempo.
 - **Meta** (linha tracejada vermelha, fixa em 95%): referência de qualidade
 - FPY = (unidades sem defeito / total produzido) × 100%
 - Eixo Y: de 85% a 100%
-- Filtros: período, turno, modelo
+- Filtros: período, turno, linha
 
 ### Produção por linha — comparativo
 
@@ -78,7 +82,7 @@ Gráfico de múltiplas linhas mostrando OEE e seus dois componentes mensuráveis
 - OEE = Disponibilidade × Performance × FPY (qualidade)
 - Eixo Y: de 65% a 100%
 - Meta padrão: 85%. OEE ≥ 85% é considerado classe mundial.
-- Filtros: período, turno, modelo
+- Filtros: período, turno, linha
 
 ### Status das linhas — AGORA
 
@@ -107,7 +111,7 @@ Barras agrupadas comparando a eficiência dos três turnos ao longo do período.
 - **Turno B** (barras verdes)
 - **Turno C** (barras roxas)
 - Eixo Y: de 65% a 100%
-- Filtros: período, modelo
+- Filtros: período, linha
 
 ### Defeitos por categoria
 
@@ -115,7 +119,7 @@ Barras horizontais mostrando o volume de defeitos por tipo no período.
 
 - Categorias: Tela (display), Câmera, Bateria, Placa-mãe, Chassi / Carcaça, Conector USB, Outros
 - Cada categoria tem uma cor fixa (vermelho, laranja, roxo, azul, verde, amarelo, cinza)
-- Filtros: período, turno, modelo
+- Filtros: período, turno, linha
 
 ### Tendência de defeitos
 
@@ -125,7 +129,7 @@ Gráfico de múltiplas linhas mostrando a evolução diária de cada categoria d
 - **Câmera** (linha laranja tracejada): defeitos de câmera por dia
 - **Bateria** (linha roxa tracejada): defeitos de bateria por dia
 - **Outros** (linha verde sólida): demais defeitos por dia
-- Filtros: período, turno, modelo
+- Filtros: período, turno, linha
 
 ## Como interpretar os dados
 

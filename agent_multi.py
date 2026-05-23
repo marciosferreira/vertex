@@ -44,17 +44,9 @@ from typing_extensions import Annotated, TypedDict
 import chart_store
 from scheduler.tools import (
     schedule_task,
-    set_task_instructions,
-    get_task_instructions,
-    list_scheduled_tasks,
-    delete_scheduled_task,
-    update_scheduled_task,
-    toggle_pause_task,
     get_task_code,
     test_task_code,
     save_task_code,
-    get_task_code_versions,
-    restore_task_code_version,
 )
 from scheduler.widget_tools import (
     add_chart_to_dashboard,
@@ -75,6 +67,7 @@ SKILL_HEADER_LINES = 4
 _orchestrator_graph = None
 _sub_agent_graph = None
 _scheduler_agent_graph = None
+_scheduling_graph = None
 _checkpointer = None
 
 # Propaga o session_id através das fronteiras de thread do ToolNode.
@@ -82,6 +75,12 @@ _checkpointer = None
 # que é o que o ToolNode do LangGraph usa internamente.
 _current_session: contextvars.ContextVar[str] = contextvars.ContextVar(
     "mfg_session", default="default"
+)
+_sandbox_mode: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "sandbox_mode", default=False
+)
+_sandbox_task_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "sandbox_task_id", default=""
 )
 
 # Snapshot do dashboard enviado pelo browser antes de cada mensagem.
@@ -139,6 +138,21 @@ def _ns_get() -> dict:
             _namespaces[session] = {"pd": pd, "np": np, "plt": plt, "stats": scipy_stats}
         _ns_last_access[session] = datetime.now()
         return _namespaces[session]
+
+
+def _ns_context_for_agent(ns: dict) -> tuple[str, list]:
+    """Retorna (vars_summary, script_history) para injetar no sub-agente como contexto."""
+    _SKIP = _BUILTINS_SKIP | {"stats", "_current_query", "_script_history"}
+    lines = []
+    for k, v in ns.items():
+        if k.startswith("_") or k in _SKIP:
+            continue
+        if isinstance(v, pd.DataFrame):
+            lines.append(f"  - '{k}': DataFrame {len(v)} linhas, colunas: {list(v.columns)}")
+        elif isinstance(v, pd.Series):
+            lines.append(f"  - '{k}': Series {len(v)} itens")
+    history = ns.get("_script_history", [])
+    return "\n".join(lines), history
 
 
 async def ns_cleanup_loop():
@@ -264,7 +278,9 @@ _TOOL_LABELS: dict[str, str] = {
     "get_current_datetime":    "🕐 Verificando data e hora",
     "gerar_pdf":               "📄 Gerando relatório PDF",
     "gerar_excel":             "📊 Gerando planilha Excel",
-    "gerenciar_agenda":         "🗓️ Gerenciando agenda de relatórios",
+    "gerenciar_agenda":          "🗓️ Gerenciando agenda de relatórios",
+    "criar_tarefa_agendada":    "🗓️ Criando tarefa agendada",
+    "editar_tarefa_agendada":   "✏️ Editando tarefa agendada",
     "schedule_task":            "🗓️ Agendando tarefa",
     "set_task_instructions":    "📝 Salvando instruções da tarefa",
     "get_task_instructions":    "🔍 Lendo instruções da tarefa",
@@ -293,10 +309,23 @@ def _push_event(session_id: str, event: dict) -> None:
         q.put(event)
 
 
-# ── Estado compartilhado ──────────────────────────────────────────────────────
+# ── Estados compartilhados ────────────────────────────────────────────────────
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+
+
+class SchedulingState(TypedDict):
+    mode: str          # "create" | "edit"
+    session_id: str
+    user_request: str  # original user request / modification description
+    task_id: str       # empty until created; for edit, the target task
+    task_name: str     # task name (for create)
+    task_code: str     # code being built or corrected
+    analista_context: str  # skill + endpoint + colunas + amostra de dados (create only)
+    error: str         # last test error; empty on success
+    retries: int       # correction attempts so far
+    result: str        # final output message
 
 
 # ── Geração de PDF ───────────────────────────────────────────────────────────
@@ -316,6 +345,11 @@ def _pdf_render_table(pdf, rows: list[list[str]]) -> None:
     if not rows:
         return
     col_n = max(len(r) for r in rows)
+    if col_n == 0:
+        return
+    # Máximo de colunas que cabem com largura mínima de 20mm
+    max_cols = max(1, int(185 / 20))
+    col_n = min(col_n, max_cols)
     col_w = 185 / col_n
     for i, row in enumerate(rows):
         if i == 0:
@@ -327,14 +361,39 @@ def _pdf_render_table(pdf, rows: list[list[str]]) -> None:
             fill = (10, 14, 20) if i % 2 == 0 else (14, 20, 30)
             pdf.set_fill_color(*fill)
             pdf.set_text_color(148, 163, 184)
+        pdf.set_x(pdf.l_margin)
         for cell in row[:col_n]:
             text = _safe(cell)
-            # Truncate using real font metrics so text never exceeds cell width
             while text and pdf.get_string_width(text) > col_w - 1:
                 text = text[:-1]
             pdf.cell(col_w, 5.5, text, border=1, fill=True)
         pdf.ln()
+    pdf.set_x(pdf.l_margin)
     pdf.ln(3)
+
+
+def _pdf_safe_multicell(pdf, h: float, text: str) -> None:
+    """Chama multi_cell garantindo que x está no l_margin e quebrando palavras longas."""
+    pdf.set_x(pdf.l_margin)
+    # Quebra palavras sem espaço que ultrapassem a largura disponível
+    available = pdf.w - pdf.l_margin - pdf.r_margin
+    words = text.split(" ")
+    safe_words = []
+    for w in words:
+        if pdf.get_string_width(w) > available - 2:
+            # Quebra o token longo em pedaços que caibam
+            chunk, buf = "", ""
+            for ch in w:
+                if pdf.get_string_width(buf + ch) > available - 2:
+                    safe_words.append(buf)
+                    buf = ch
+                else:
+                    buf += ch
+            if buf:
+                safe_words.append(buf)
+        else:
+            safe_words.append(w)
+    pdf.multi_cell(0, h, _safe(" ".join(safe_words)))
 
 
 def _pdf_render_text(pdf, text: str) -> None:
@@ -367,31 +426,31 @@ def _pdf_render_text(pdf, text: str) -> None:
         if s.startswith("### "):
             pdf.set_font("Helvetica", "B", 11)
             pdf.set_text_color(226, 232, 240)
-            pdf.multi_cell(0, 6, _safe(s[4:]))
+            _pdf_safe_multicell(pdf, 6, s[4:])
             pdf.ln(1)
         elif s.startswith("## "):
             pdf.set_font("Helvetica", "B", 13)
             pdf.set_text_color(56, 189, 248)
-            pdf.multi_cell(0, 7, _safe(s[3:]))
+            _pdf_safe_multicell(pdf, 7, s[3:])
             pdf.ln(2)
         elif s.startswith("# "):
             pdf.set_font("Helvetica", "B", 15)
             pdf.set_text_color(56, 189, 248)
-            pdf.multi_cell(0, 8, _safe(s[2:]))
+            _pdf_safe_multicell(pdf, 8, s[2:])
             pdf.ln(3)
         elif s.startswith(("- ", "* ")):
             clean = _re.sub(r'\*\*(.*?)\*\*', r'\1', s[2:])
             clean = _re.sub(r'`(.*?)`', r'\1', clean)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(148, 163, 184)
-            pdf.multi_cell(0, 5, _safe(f"  • {clean}"))
+            _pdf_safe_multicell(pdf, 5, f"  • {clean}")
         else:
             clean = _re.sub(r'\*\*(.*?)\*\*', r'\1', s)
             clean = _re.sub(r'\*(.*?)\*', r'\1', clean)
             clean = _re.sub(r'`(.*?)`', r'\1', clean)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(148, 163, 184)
-            pdf.multi_cell(0, 5, _safe(clean))
+            _pdf_safe_multicell(pdf, 5, clean)
 
     flush_table()
 
@@ -406,25 +465,33 @@ def _build_pdf(titulo: str, conteudo: str, session_id: str) -> str:
     # Cabeçalho
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(56, 189, 248)
-    pdf.multi_cell(0, 10, _safe(titulo))
+    _pdf_safe_multicell(pdf, 10, titulo)
     pdf.ln(2)
     pdf.set_draw_color(30, 45, 61)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
 
     # Divide conteúdo em partes de texto e tokens de chart
-    parts = _CHART_TOKEN_RE.split(conteudo)
-    for i, part in enumerate(parts):
-        if i % 2 == 0:
-            _pdf_render_text(pdf, part)
-        else:
-            b64 = chart_store.get_chart_b64(part)
-            if b64:
-                img_bytes = _b64.b64decode(b64)
-                if pdf.get_y() > 210:
-                    pdf.add_page()
-                pdf.image(io.BytesIO(img_bytes), x=10, w=190)
-                pdf.ln(3)
+    try:
+        parts = _CHART_TOKEN_RE.split(conteudo)
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                _pdf_render_text(pdf, part)
+            else:
+                b64 = chart_store.get_chart_b64(part)
+                if b64:
+                    img_bytes = _b64.b64decode(b64)
+                    if pdf.get_y() > 210:
+                        pdf.add_page()
+                    pdf.image(io.BytesIO(img_bytes), x=10, w=190)
+                    pdf.ln(3)
+    except Exception:
+        # Fallback: página limpa com mensagem de erro de layout
+        pdf.add_page()
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(148, 163, 184)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, _safe("Erro ao renderizar conteudo formatado. Verifique o conteudo gerado."))
 
     pdf_bytes = bytes(pdf.output())
     safe_name = _re.sub(r'[^\w\- ]', '', titulo)[:40].strip().replace(" ", "_")
@@ -439,16 +506,43 @@ _RAG_DIR = Path(__file__).parent / "rag"
 
 @tool
 def rag_dominio() -> str:
-    """Retorna informações sobre o domínio industrial: definição dos KPIs (OEE, FPY,
-    downtime, taxa de defeito), o que cada painel do dashboard exibe, como interpretar
-    os indicadores, linhas de produção (Linha 1–4), modelos (PhoneX Pro/Lite/Ultra/Mini),
-    turnos (A/B/C) e granularidade dos dados (diária vs horária).
+    """Retorna informações sobre o domínio industrial E o mapeamento ATUAL linha→modelo
+    lido ao vivo do banco de dados.
 
-    Use quando o usuário perguntar: o que é OEE, como FPY é calculado, o que significa
-    downtime, o que mostra um painel específico, como interpretar um resultado,
-    qual linha produz qual modelo, qual horário é o turno C, etc.
+    CHAME ESTA TOOL SEMPRE QUE o usuário mencionar um modelo pelo nome
+    (ex: "PhoneX Pro", "PhoneX Lite", "PhoneX Ultra", "PhoneX Mini") para descobrir
+    qual line= usar nos filtros da API. O mapeamento pode mudar — não assuma valores fixos.
+
+    Também use para: definição dos KPIs (OEE, FPY, downtime, taxa de defeito),
+    o que cada painel do dashboard exibe, como interpretar os indicadores,
+    turnos (A/B/C), granularidade dos dados (diária vs horária).
     """
-    return (_RAG_DIR / "dominio.md").read_text(encoding="utf-8")
+    base = (_RAG_DIR / "dominio.md").read_text(encoding="utf-8")
+
+    # Injeta o mapeamento atual linha→modelo diretamente do banco
+    try:
+        import sqlite3 as _sq3
+        conn = _sq3.connect(DB_PATH)
+        rows = conn.execute(
+            "SELECT id, name, model FROM lines_status ORDER BY id"
+        ).fetchall()
+        conn.close()
+        if rows:
+            tabela = "\n## Mapeamento atual linha → modelo (lido ao vivo do banco)\n\n"
+            tabela += "| line= | Linha  | Modelo atual |\n"
+            tabela += "|-------|--------|--------------|\n"
+            for lid, lname, lmodel in rows:
+                tabela += f"| `line={lid}` | {lname} | {lmodel} |\n"
+            tabela += (
+                "\n> **Regra obrigatória:** quando o usuário mencionar um modelo pelo nome "
+                "(ex: \"PhoneX Pro\"), use esta tabela para encontrar o `line=` correto e "
+                "filtre sempre por linha, nunca por nome de modelo.\n"
+            )
+            base += tabela
+    except Exception:
+        pass  # banco indisponível — retorna só o texto estático
+
+    return base
 
 
 @tool
@@ -851,12 +945,28 @@ def analisar_dataframe(script: str) -> str:
 
     ns = _ns_get()
 
+    if _sandbox_mode.get():
+        import re as _re_sb
+        # Remove imports explícitos — tudo já está pré-injetado no namespace do sandbox.
+        script = "\n".join(
+            ln for ln in script.splitlines()
+            if not _re_sb.match(r'\s*(import |from \S+ import )', ln)
+        )
+        from scheduler.runner import _build_globals
+        from scheduler.context import TaskContext
+        globals_exec = _build_globals(
+            TaskContext(_current_session.get()), "2000-01-01", "2000-01-01"
+        )
+        globals_exec.update({k: v for k, v in ns.items() if isinstance(v, pd.DataFrame)})
+    else:
+        globals_exec = ns
+
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
     try:
-        exec(textwrap.dedent(script).lstrip("\n"), ns)
+        exec(textwrap.dedent(script).lstrip("\n"), globals_exec)
         console = sys.stdout.getvalue().strip()
-        result = ns.get("result")
+        result = globals_exec.get("result")
 
         parts = []
         if console:
@@ -900,6 +1010,18 @@ def analisar_dataframe(script: str) -> str:
         msg = f"Erro:\n{type(e).__name__}: {e}\n\n{tb.format_exc()}"
         msg += _ns_summary(ns)
         _tlog("analisar_dataframe", "RETORNO", status="ERRO", erro=str(e))
+        if _sandbox_mode.get():
+            try:
+                from db import log_task_code_error
+                log_task_code_error(
+                    task_id=_sandbox_task_id.get() or "unknown",
+                    attempt=0,
+                    phase="explore",
+                    error=f"{type(e).__name__}: {e}",
+                    code=script,
+                )
+            except Exception:
+                pass
         return msg
     finally:
         sys.stdout = old_stdout
@@ -1025,6 +1147,14 @@ def _build_sub_agent(llm):
         "- Se analisar_dataframe retornar erro, corrija e chame novamente.\n"
         "- Formate SEMPRE a resposta final em markdown: tabelas para dados tabulares, "
         "**negrito** para valores relevantes.\n"
+        "- LEGENDA DOS GRÁFICOS: NUNCA use `bbox_to_anchor` para posicionar a legenda fora "
+        "dos eixos — isso gera figuras extremamente largas com a legenda separada do gráfico. "
+        "Use sempre `ax.legend(loc='best')` ou outra posição interna (upper right, lower left, etc). "
+        "Se o gráfico tiver muitas séries, use `ax.legend(loc='upper right', fontsize=8)` "
+        "dentro dos eixos. PROIBIDO: `bbox_to_anchor`, `loc='outside'`, `fig.legend()`.\n"
+        "- RÓTULOS DO EIXO X: para rotacionar rótulos use SOMENTE "
+        "`plt.setp(ax.get_xticklabels(), rotation=45, ha='right')`. "
+        "NUNCA passe `ha=` dentro de `ax.tick_params()` — esse parâmetro não existe lá e causa TypeError.\n"
         "- TIPO DE SAÍDA: a mensagem pode começar com um prefixo `[TIPO DE SAÍDA OBRIGATÓRIO: X]`.\n"
         "  - GRAFICO → `result = fig` (figura matplotlib). NUNCA retorne tabela quando tipo=GRAFICO.\n"
         "  - TABELA  → `result = df`. Mencione na resposta final o nome da variável DataFrame\n"
@@ -1065,19 +1195,25 @@ def _build_sub_agent(llm):
         "  - Total produzido: 1.247 pç | Média diária: 41,6 pç | FPY médio: 96,2%\n"
         "  Isso permite ao orquestrador responder follow-ups sobre a planilha sem reprocessar os dados.\n\n"
         "## Modo agendamento [PARA_AGENDAMENTO]\n"
-        "Se a mensagem contiver [PARA_AGENDAMENTO], após a análise normal adicione um bloco\n"
-        "separado com exatamente este formato (preenchido com o que você executou de verdade):\n\n"
-        "```task_context\n"
-        "endpoint: /caminho/exato  (SEM datas — datas vêm de from_date/to_date)\n"
-        "params: param1=valor_fixo&param2=valor_fixo  (apenas params que NÃO são datas)\n"
-        "colunas: coluna1, coluna2, coluna3\n"
-        "pandas: codigo_pandas_que_funcionou_em_analisar_dataframe\n"
-        "chart_token: [chart:uuid]  (se gerou gráfico, senão omitir)\n"
-        "ctx_method: generate_pdf | generate_excel | save_chart  (qual usar no task_code)\n"
+        "Se a mensagem contiver [PARA_AGENDAMENTO], após a análise normal escreva um bloco\n"
+        "```task_code com o código Python completo pronto para agendamento:\n\n"
+        "```task_code\n"
+        "def run(from_date, to_date, ctx):\n"
+        "    # implementação baseada EXATAMENTE no que você executou acima\n"
+        "    # endpoint real, colunas reais, lógica real — sem inventar nada\n"
         "```\n\n"
-        "REGRA: preencha com o que REALMENTE foi executado — endpoint real, colunas reais,\n"
-        "código pandas real. NUNCA invente ou generalize. NUNCA inclua datas específicas\n"
-        "no endpoint ou nos params — datas são sempre injetadas via from_date/to_date.\n\n"
+        "REGRAS CRÍTICAS do bloco task_code:\n"
+        "- Baseie-se EXCLUSIVAMENTE no endpoint real, colunas reais e lógica que você observou\n"
+        "- NUNCA escreva datas específicas como '2026-05-18' — use from_date/to_date ou ctx.today()\n"
+        "- NUNCA inclua linhas de import — pd, np, plt, ctx etc já estão no namespace do sandbox\n"
+        "- Retorne via ctx.save_chart(fig), ctx.generate_pdf(titulo, conteudo) ou ctx.generate_excel(df, nome)\n"
+        "- NUNCA retorne a figura diretamente — sempre passe por ctx.save_chart(fig)\n"
+        "- Para relatórios periódicos (daily/weekly/monthly): use from_date e to_date recebidos como params\n"
+        "  exemplo: ctx.api(f'/production/historical?from={from_date}&to={to_date}')\n"
+        "- Para monitores (every_Xm/every_Xh): use ctx.today() para a data\n"
+        "  exemplo: hoje = ctx.today(); ctx.api(f'/metrics?from={hoje}&to={hoje}')\n"
+        "- Se a mensagem contiver um bloco de REGRAS DO SANDBOX, siga-as com prioridade máxima\n"
+        "- NÃO use df.to_markdown() no conteúdo do PDF — use apenas bullet points e tokens [chart:uuid]\n\n"
         f"## Skills disponíveis\n{catalogo}\n\n"
         "## RACIOCÍNIO OBRIGATÓRIO\n"
         "SEMPRE que for chamar uma tool, inclua na mesma resposta um texto curto explicando "
@@ -1196,8 +1332,25 @@ def consultar_analista(detalhes: str, from_date: str, to_date: str, tipo: str = 
     ns = _ns_get()
     ns["_current_query"] = detalhes
     flags = f"[TIPO DE SAÍDA OBRIGATÓRIO: {tipo.upper()}]\n[PERÍODO: from={from_date} to={to_date}]"
+
+    # Injeta o último script como referência para edições — sem dados, só código
+    last_scripts = ns.get("_script_history", [])
+    if last_scripts:
+        last_script = last_scripts[-1]["script"]
+        flags += (
+            "\n\n[ÚLTIMO SCRIPT EXECUTADO — use como base se for ajuste sobre análise anterior; "
+            "ainda assim re-busque os dados normalmente antes de executar]\n"
+            f"```python\n{last_script}\n```"
+        )
+
     if para_agendamento:
-        flags += "\n[PARA_AGENDAMENTO]"
+        sandbox_skill = (SKILLS_FOLDER / "task_code_sandbox.md").read_text(encoding="utf-8")
+        flags += (
+            "\n[PARA_AGENDAMENTO]\n\n"
+            "--- REGRAS DO SANDBOX (leia antes de escrever o bloco task_code) ---\n"
+            + sandbox_skill
+            + "\n--- FIM DAS REGRAS DO SANDBOX ---"
+        )
     msg_content = f"{flags}\n{detalhes}"
     resultado = _sub_agent_graph.invoke(
         {"messages": [HumanMessage(content=msg_content)]},
@@ -1286,10 +1439,14 @@ def _describe_task_context() -> str:
 def _build_scheduler_agent(llm):
     sch_tools = _discover_scheduler_tools()
 
+    _sandbox_skill = (SKILLS_FOLDER / "task_code_sandbox.md").read_text(encoding="utf-8")
+
     SCH_SYSTEM_PROMPT = (
         "Você é o sub-agente responsável por gerenciar o agendamento de tarefas.\n\n"
         "## Suas tools\n"
         + _describe_scheduler_tools(sch_tools) + "\n\n"
+        + "## Sandbox do task_code — leia antes de escrever qualquer código\n"
+        + _sandbox_skill + "\n\n"
         "## Modos de execução da tarefa\n"
         "Cada tarefa pode executar em dois modos:\n"
         "  A) **Modo LLM** (sem task_code): o daemon monta um prompt com as `instructions` e chama o agente.\n"
@@ -1326,14 +1483,23 @@ def _build_scheduler_agent(llm):
         "## Exemplo de task_code\n"
         "```python\n"
         "def run(from_date, to_date, ctx):\n"
-        "    dados = ctx.api(f'/production?from={from_date}&to={to_date}')\n"
+        "    from_d, to_d = ctx.date_range(days=7)\n"
+        "    dados = ctx.api(f'/production/historical?from={from_d}&to={to_d}')\n"
         "    df = pd.DataFrame(dados)\n"
         "    fig, ax = plt.subplots(figsize=(10, 4))\n"
         "    ax.bar(df['date'], df['produced'], color='steelblue')\n"
         "    ax.set_title('Produção Diária')\n"
         "    token_chart = ctx.save_chart(fig)\n"
-        "    conteudo = f'## Produção Diária\\n{token_chart}\\n\\n'\n"
-        "    conteudo += df[['date','produced']].to_markdown(index=False)\n"
+        "    # NÃO use to_markdown() — causa erro de layout no PDF\n"
+        "    # Use apenas bullet points com valores agregados\n"
+        "    total = df['produced'].sum()\n"
+        "    media = df['produced'].mean()\n"
+        "    conteudo = (\n"
+        "        f'## Produção Diária\\n\\n{token_chart}\\n\\n'\n"
+        "        f'- Período: {from_d} a {to_d}\\n'\n"
+        "        f'- Total produzido: {total:.0f} unidades\\n'\n"
+        "        f'- Média diária: {media:.1f} unidades\\n'\n"
+        "    )\n"
         "    return ctx.generate_pdf('Relatório de Produção', conteudo)\n"
         "```\n\n"
         "## Edição de task_code\n"
@@ -1399,6 +1565,417 @@ def _build_scheduler_agent(llm):
     return builder.compile()
 
 
+def _build_scheduling_graph(llm):
+    """Grafo determinístico para criação e edição de task_code agendado.
+
+    Fluxo create: criar_tarefa → consultar_dados → gerar_codigo → testar_codigo ↔ corrigir_codigo → salvar_codigo → responder
+    Fluxo edit:   editar_codigo → testar_codigo ↔ corrigir_codigo → salvar_codigo → responder
+    """
+    import json as _json
+    import re as _re_sg
+
+    _MAX_RETRIES = 3
+    _sandbox_skill = (SKILLS_FOLDER / "task_code_sandbox.md").read_text(encoding="utf-8")
+
+    def _extract_code_block(text: str) -> str:
+        """Extrai bloco ```task_code``` ou ```python``` que contenha def run."""
+        for marker in ("task_code", "python"):
+            m = _re_sg.search(rf'```{marker}\n(.*?)```', text, _re_sg.DOTALL)
+            if m and "def run" in m.group(1):
+                return m.group(1).strip()
+        m = _re_sg.search(r'```[^\n]*\n(.*?def run.*?)```', text, _re_sg.DOTALL)
+        if m:
+            return m.group(1).strip()
+        m = _re_sg.search(r'(def run\s*\(from_date.*)', text, _re_sg.DOTALL)
+        if m:
+            return m.group(1).strip()
+        return ""
+
+    def _push(event: dict) -> None:
+        _push_event(_current_session.get(), event)
+
+    # ── Node: criar_tarefa ───────────────────────────────────────────────────
+
+    def node_criar_tarefa(state: SchedulingState) -> dict:
+        _push({"type": "tool", "name": "schedule_task", "label": "🗓️ Criando registro da tarefa"})
+
+        param_prompt = (
+            "Extraia os parâmetros de agendamento da instrução abaixo. "
+            "Responda APENAS com JSON válido, sem explicação nem marcação markdown.\n\n"
+            f"Instrução: {state['user_request']}\n\n"
+            'Formato: {"name": "nome curto (máx 60 chars)", "description": "descrição clara", '
+            '"frequency": "once|daily|weekly|monthly|every_Xm|every_Xh|every_Xd", '
+            '"weekday": "monday|tuesday|wednesday|thursday|friday|saturday|sunday ou null", '
+            '"day": "número 1-31 para monthly ou null", "time": "HH:MM ou null"}\n\n'
+            "REGRAS: monitores (me avise/notifique/fique de olho) → frequency=every_5m, time=null. "
+            "weekly → weekday obrigatório. monthly → day obrigatório. "
+            "Se tempo não informado → time=null."
+        )
+        response = llm.invoke([HumanMessage(content=param_prompt)])
+        try:
+            raw = response.content.strip()
+            raw = _re_sg.sub(r'^```[^\n]*\n?', '', raw).rstrip('`').strip()
+            params = _json.loads(raw)
+        except Exception as e:
+            return {"error": f"Erro ao interpretar parâmetros de agendamento: {e}", "task_id": "", "task_name": ""}
+
+        call_params: dict = {
+            "name": params.get("name", "Nova Tarefa"),
+            "description": params.get("description", ""),
+            "frequency": params.get("frequency", "daily"),
+        }
+        if params.get("weekday"):
+            call_params["weekday"] = params["weekday"]
+        if params.get("day") and params["day"] is not None:
+            call_params["day"] = str(params["day"])
+        if params.get("time") and params["time"] is not None:
+            call_params["time"] = params["time"]
+
+        result = schedule_task.invoke(call_params)
+
+        m = _re_sg.search(r'\[(\d+)\]', result)
+        task_id = m.group(1) if m else ""
+
+        if not task_id:
+            return {"error": f"Erro ao criar tarefa: {result}", "task_id": "", "task_name": ""}
+
+        return {"task_id": task_id, "task_name": params.get("name", ""), "error": ""}
+
+    # ── Node: consultar_dados ────────────────────────────────────────────────
+    # Responsabilidade única: o analista identifica a skill correta, busca dados
+    # reais via API e devolve um contexto estruturado (skill, endpoint, colunas,
+    # amostra). NÃO escreve código — isso fica no nó seguinte.
+
+    def node_consultar_dados(state: SchedulingState) -> dict:
+        if _sub_agent_graph is None:
+            return {"error": "Sub-agente analista não inicializado.", "analista_context": ""}
+
+        _push({"type": "tool", "name": "consultar_analista", "label": "🔍 Consultando dados reais"})
+
+        hoje = datetime.now().date().isoformat()
+
+        msg_content = (
+            f"[PARA_AGENDAMENTO — FASE 1: COLETA DE CONTEXTO]\n"
+            f"[PERÍODO: from={hoje}&to={hoje}]\n\n"
+            f"Pedido do usuário: {state['user_request']}\n\n"
+            f"Sua tarefa nesta fase:\n"
+            f"1. Chame read_skill() para identificar a skill correta para este pedido.\n"
+            f"2. Chame chamar_api() para buscar dados reais do período acima.\n"
+            f"3. Chame analisar_dataframe() para observar colunas e valores.\n"
+            f"4. Retorne um relatório de contexto com EXATAMENTE este formato:\n\n"
+            f"SKILL: <nome do arquivo .md usado>\n"
+            f"ENDPOINT: <URL completa usada na chamada chamar_api, com parâmetros>\n"
+            f"COLUNAS: <lista das colunas relevantes do dataframe>\n"
+            f"AMOSTRA: <3-5 linhas representativas do dataframe em formato texto>\n"
+            f"TIPO_SAIDA: <PDF_COM_GRAFICO | GRAFICO | EXCEL | MONITOR>\n\n"
+            f"⛔ NÃO gere task_code nesta fase.\n"
+            f"⛔ NÃO chame gerar_pdf nem gerar_excel.\n"
+            f"Apenas colete e reporte o contexto de dados."
+        )
+
+        session_id = state["session_id"]
+        _sandbox_mode.set(True)
+        _sandbox_task_id.set(state.get("task_id", ""))
+        try:
+            resultado = _sub_agent_graph.invoke(
+                {"messages": [HumanMessage(content=msg_content)]},
+                config={"configurable": {"thread_id": session_id}, "recursion_limit": 30},
+            )
+        finally:
+            _sandbox_mode.set(False)
+            _sandbox_task_id.set("")
+        response_text = resultado["messages"][-1].content
+
+        if not response_text or len(response_text.strip()) < 20:
+            return {"error": "Analista não retornou contexto de dados.", "analista_context": ""}
+
+        return {"analista_context": response_text, "error": ""}
+
+    # ── Node: gerar_codigo ───────────────────────────────────────────────────
+    # Responsabilidade única: dado o contexto do analista, gera o task_code
+    # via LLM dedicado com as regras do sandbox como foco total do prompt.
+
+    def node_gerar_codigo(state: SchedulingState) -> dict:
+        _push({"type": "tool", "name": "consultar_analista", "label": "⚙️ Gerando código da tarefa"})
+
+        context = state.get("analista_context", "")
+
+        gen_prompt = (
+            f"Você é um gerador de task_code Python para tarefas agendadas.\n\n"
+            f"## Pedido do usuário\n"
+            f"{state['user_request']}\n\n"
+            f"## Contexto coletado pelo analista\n"
+            f"{context}\n\n"
+            f"## Regras obrigatórias do sandbox\n"
+            f"{_sandbox_skill}\n\n"
+            f"## Instruções\n"
+            f"- Escreva a função `def run(from_date, to_date, ctx)` usando o endpoint e colunas acima.\n"
+            f"- Use EXATAMENTE o endpoint informado em ENDPOINT (com from_date e to_date como parâmetros de data).\n"
+            f"- Use EXATAMENTE os nomes de colunas informados em COLUNAS.\n"
+            f"- Siga o template canônico correspondente ao TIPO_SAIDA:\n"
+            f"    PDF_COM_GRAFICO → salve gráfico com ctx.save_chart(fig) e gere PDF com ctx.generate_pdf()\n"
+            f"    GRAFICO         → retorne apenas ctx.save_chart(fig)\n"
+            f"    EXCEL           → retorne ctx.generate_excel(df, 'nome')\n"
+            f"    MONITOR         → use ctx.notify() e retorne string com valor atual\n"
+            f"- NUNCA use import. pd, np, plt, date, datetime, timedelta etc já estão no namespace.\n"
+            f"- Retorne APENAS o bloco Python completo, sem texto explicativo.\n"
+            f"- Responda com ```python\\n...\\n```"
+        )
+
+        response = llm.invoke([HumanMessage(content=gen_prompt)])
+        code = _extract_code_block(response.content)
+
+        if not code:
+            return {
+                "error": (
+                    "LLM não gerou bloco task_code válido. "
+                    f"Resposta (primeiros 400 chars): {response.content[:400]}"
+                ),
+                "task_code": "",
+            }
+
+        return {"task_code": code, "error": ""}
+
+    # ── Node: editar_codigo ──────────────────────────────────────────────────
+
+    def node_editar_codigo(state: SchedulingState) -> dict:
+        _push({"type": "tool", "name": "get_task_code", "label": "🔍 Lendo código atual da tarefa"})
+
+        result = get_task_code.invoke({"task_id": state["task_id"]})
+        current_code = _extract_code_block(result)
+        if not current_code and "def run" in result:
+            current_code = result
+
+        if not current_code:
+            # Sem código existente — gera do zero passando pelos dois nós de criação
+            _push({"type": "tool", "name": "consultar_analista", "label": "🔍 Sem código existente — gerando do zero"})
+            ctx_result = node_consultar_dados(state)
+            if ctx_result.get("error"):
+                return ctx_result
+            return node_gerar_codigo({**state, **ctx_result})
+
+        _push({"type": "tool", "name": "get_task_code", "label": "✏️ Aplicando modificação ao código"})
+
+        edit_prompt = (
+            f"Modifique o código Python abaixo conforme solicitado.\n\n"
+            f"MODIFICAÇÃO: {state['user_request']}\n\n"
+            f"CÓDIGO ATUAL:\n```python\n{current_code}\n```\n\n"
+            f"REGRAS DO SANDBOX:\n{_sandbox_skill}\n\n"
+            f"INSTRUÇÕES:\n"
+            f"- Faça APENAS a mudança mínima necessária\n"
+            f"- Preserve toda a estrutura, variáveis, endpoints e lógica inalterada\n"
+            f"- NÃO inclua import — pd, np, plt etc já estão disponíveis\n"
+            f"- Retorne APENAS o código Python completo (com def run), sem texto explicativo\n"
+            f"- Responda com bloco ```python\\n...\\n```"
+        )
+
+        response = llm.invoke([HumanMessage(content=edit_prompt)])
+        new_code = _extract_code_block(response.content)
+        if not new_code:
+            return {"error": f"LLM não retornou código válido: {response.content[:300]}", "task_code": current_code}
+
+        return {"task_code": new_code, "error": ""}
+
+    # ── Node: testar_codigo ──────────────────────────────────────────────────
+
+    def node_testar_codigo(state: SchedulingState) -> dict:
+        if not state.get("task_code"):
+            return {"error": "Nenhum código para testar.", "retries": state.get("retries", 0)}
+
+        _push({"type": "tool", "name": "test_task_code", "label": "🧪 Testando código"})
+
+        result = test_task_code.invoke({
+            "task_id": state["task_id"],
+            "code": state["task_code"],
+        })
+
+        is_error = result.startswith("❌") or "❌" in result[:30]
+
+        if is_error:
+            attempt = state.get("retries", 0) + 1
+            try:
+                from db import log_task_code_error
+                phase = "create" if state.get("mode") == "create" else "edit"
+                log_task_code_error(
+                    task_id=state["task_id"],
+                    attempt=attempt,
+                    phase=phase,
+                    error=result,
+                    code=state["task_code"],
+                )
+            except Exception:
+                pass  # auditoria nunca bloqueia o fluxo principal
+            return {
+                "error": result,
+                "retries": attempt,
+            }
+        return {"error": "", "result": result}
+
+    # ── Node: corrigir_codigo ────────────────────────────────────────────────
+
+    def node_corrigir_codigo(state: SchedulingState) -> dict:
+        _push({"type": "tool", "name": "test_task_code", "label": "🔧 Corrigindo erro no código"})
+
+        error = state["error"]
+
+        # Instrução extra targetada para erros de import bloqueado
+        import_match = _re_sg.search(r"Import de '(\w+)' não é permitido", error)
+        if not import_match:
+            # Também captura "O task_code contém imports, que são bloqueados"
+            import_match = _re_sg.search(r"bloqueados no sandbox[:\s]+(.+?)$", error, _re_sg.MULTILINE)
+        import_hint = ""
+        if import_match:
+            blocked = import_match.group(1).strip().split()[0].strip("'\"")
+            import_hint = (
+                f"\n🚫 ERRO ESPECÍFICO DE IMPORT BLOQUEADO: o módulo '{blocked}' não existe no sandbox.\n"
+                f"OBRIGATÓRIO — faça as DUAS coisas:\n"
+                f"  1. Remova TODA linha `import {blocked}` (incluindo dentro de def run)\n"
+                f"  2. Substitua CADA uso de `{blocked}.X(...)` por equivalente disponível:\n"
+                f"     - time.sleep / time.time → desnecessário em tasks, remova\n"
+                f"     - time.strftime → use from_date.strftime() ou datetime.now().strftime()\n"
+                f"     - math.sqrt/log → use np.sqrt(), np.log()\n"
+                f"     - json.dumps/loads → use str() ou dict diretamente\n"
+                f"     - re.match/search → reescreva sem regex se possível\n"
+                f"     - Para qualquer outro: verifique se pd, np, datetime, timedelta cobrem a necessidade\n"
+            )
+
+        fix_prompt = (
+            f"O código Python abaixo falhou no teste. Corrija-o.\n\n"
+            f"ERRO:\n{error}\n"
+            f"{import_hint}\n"
+            f"CÓDIGO COM ERRO:\n```python\n{state['task_code']}\n```\n\n"
+            f"REGRAS DO SANDBOX:\n{_sandbox_skill}\n\n"
+            f"INSTRUÇÕES:\n"
+            f"- Corrija APENAS o erro acima, preservando toda a lógica restante\n"
+            f"- NÃO inclua NENHUM import — pd, np, plt, date, datetime, timedelta etc já estão disponíveis\n"
+            f"- Retorne APENAS o código Python completo (com def run), sem texto explicativo\n"
+            f"- Responda com bloco ```python\\n...\\n```"
+        )
+
+        response = llm.invoke([HumanMessage(content=fix_prompt)])
+        new_code = _extract_code_block(response.content)
+        if not new_code:
+            return {}  # keep existing task_code, will fail again on next test
+
+        # Pós-processamento determinístico: remove linhas de import que o LLM teima em gerar
+        stripped_lines = [
+            ln for ln in new_code.splitlines()
+            if not _re_sg.match(r'\s*(import |from \S+ import )', ln)
+        ]
+        new_code = "\n".join(stripped_lines)
+
+        return {"task_code": new_code}
+
+    # ── Node: salvar_codigo ──────────────────────────────────────────────────
+
+    def node_salvar_codigo(state: SchedulingState) -> dict:
+        _push({"type": "tool", "name": "save_task_code", "label": "💾 Salvando código validado"})
+
+        result = save_task_code.invoke({
+            "task_id": state["task_id"],
+            "code": state["task_code"],
+        })
+
+        return {"result": result}
+
+    # ── Node: responder ──────────────────────────────────────────────────────
+
+    def node_responder(state: SchedulingState) -> dict:
+        tid = state.get("task_id", "?")
+        err = state.get("error", "")
+        code = state.get("task_code", "")
+
+        if err and not code:
+            msg = f"Não foi possível completar a operação: {err}"
+        elif err:
+            retries = state.get("retries", 0)
+            # Tarefa foi criada como draft mas o código falhou — remove o registro
+            if state.get("mode") == "create" and tid and tid != "?":
+                try:
+                    from db import get_db as _get_db
+                    with _get_db() as _conn:
+                        _conn.execute("DELETE FROM scheduled_tasks WHERE id = ? AND status = 'draft'", (tid,))
+                        _conn.commit()
+                except Exception:
+                    pass
+            msg = (
+                f"Não foi possível gerar o código da tarefa após {retries} tentativa(s).\n\n"
+                f"**Último erro:**\n```\n{err[:500]}\n```\n\n"
+                f"Tente novamente ou reformule o pedido com mais detalhes."
+            )
+        elif state["mode"] == "create":
+            msg = (
+                f"Tarefa **[{tid}]** criada e agendada com código determinístico.\n\n"
+                f"Para ajustar: **editar tarefa {tid}**"
+            )
+        else:
+            msg = (
+                f"Tarefa **[{tid}]** atualizada com sucesso.\n\n"
+                f"Para novos ajustes: **editar tarefa {tid}**"
+            )
+
+        return {"result": msg}
+
+    # ── Routing ──────────────────────────────────────────────────────────────
+
+    def route_entry(state: SchedulingState) -> str:
+        return "criar_tarefa" if state["mode"] == "create" else "editar_codigo"
+
+    def route_after_criar(state: SchedulingState) -> str:
+        if not state.get("task_id") or state.get("error"):
+            return "responder"
+        return "consultar_dados"
+
+    def route_after_test(state: SchedulingState) -> str:
+        if not state.get("error"):
+            return "salvar_codigo"
+        if state.get("retries", 0) < _MAX_RETRIES:
+            return "corrigir_codigo"
+        return "responder"
+
+    # ── Build ────────────────────────────────────────────────────────────────
+
+    def route_after_consultar(state: SchedulingState) -> str:
+        if state.get("error"):
+            return "responder"
+        return "gerar_codigo"
+
+    builder = StateGraph(SchedulingState)
+    builder.add_node("criar_tarefa",    node_criar_tarefa)
+    builder.add_node("consultar_dados", node_consultar_dados)
+    builder.add_node("gerar_codigo",    node_gerar_codigo)
+    builder.add_node("editar_codigo",   node_editar_codigo)
+    builder.add_node("testar_codigo",   node_testar_codigo)
+    builder.add_node("corrigir_codigo", node_corrigir_codigo)
+    builder.add_node("salvar_codigo",   node_salvar_codigo)
+    builder.add_node("responder",       node_responder)
+
+    builder.add_conditional_edges(START, route_entry, {
+        "criar_tarefa": "criar_tarefa",
+        "editar_codigo": "editar_codigo",
+    })
+    builder.add_conditional_edges("criar_tarefa", route_after_criar, {
+        "consultar_dados": "consultar_dados",
+        "responder": "responder",
+    })
+    builder.add_conditional_edges("consultar_dados", route_after_consultar, {
+        "gerar_codigo": "gerar_codigo",
+        "responder": "responder",
+    })
+    builder.add_edge("gerar_codigo",  "testar_codigo")
+    builder.add_edge("editar_codigo", "testar_codigo")
+    builder.add_conditional_edges("testar_codigo", route_after_test, {
+        "salvar_codigo":  "salvar_codigo",
+        "corrigir_codigo": "corrigir_codigo",
+        "responder":      "responder",
+    })
+    builder.add_edge("corrigir_codigo", "testar_codigo")
+    builder.add_edge("salvar_codigo",   "responder")
+    builder.add_edge("responder",       END)
+
+    return builder.compile()
+
+
 @tool
 def gerenciar_agenda(instrucao: str) -> str:
     """Delega ao sub-agente de scheduling operações sobre tarefas agendadas.
@@ -1423,6 +2000,89 @@ def gerenciar_agenda(instrucao: str) -> str:
         config={"configurable": {"thread_id": _current_session.get()}, "recursion_limit": 15},
     )
     return resultado["messages"][-1].content
+
+
+@tool
+def criar_tarefa_agendada(instrucao: str) -> str:
+    """Cria uma nova tarefa agendada com código Python determinístico gerado automaticamente.
+
+    Use para CRIAR/AGENDAR uma nova tarefa automática, relatório periódico ou monitor.
+    Este tool executa o fluxo completo:
+      1. Infere parâmetros (nome, frequência, horário) da instrução
+      2. Cria o registro da tarefa no banco
+      3. Executa análise prévia para observar os dados reais
+      4. Gera o código Python (def run) baseado nos dados reais
+      5. Testa o código (até 3 tentativas de correção automática)
+      6. Salva o código validado
+
+    Args:
+        instrucao: Descrição completa do que a tarefa deve fazer, com frequência e
+                   qualquer parâmetro relevante. Exemplos:
+                   "Relatório semanal de OEE toda segunda às 8h"
+                   "Monitor de produção a cada 5 minutos, alerta se OEE < 80%"
+                   "Planilha mensal de defeitos no dia 1 de cada mês"
+    """
+    if _scheduling_graph is None:
+        return "SchedulingGraph não inicializado."
+
+    session_id = _current_session.get()
+    _push_event(session_id, {"type": "tool", "name": "criar_tarefa_agendada", "label": "🗓️ Iniciando criação de tarefa agendada"})
+
+    initial_state: SchedulingState = {
+        "mode": "create",
+        "session_id": session_id,
+        "user_request": instrucao,
+        "task_id": "",
+        "task_name": "",
+        "task_code": "",
+        "error": "",
+        "retries": 0,
+        "result": "",
+    }
+
+    resultado = _scheduling_graph.invoke(initial_state)  # type: ignore[arg-type]
+    return resultado.get("result", "Tarefa criada.")
+
+
+@tool
+def editar_tarefa_agendada(task_id: str, modificacao: str) -> str:
+    """Edita o código Python de uma tarefa agendada existente.
+
+    Use quando o usuário pedir para EDITAR/ALTERAR/AJUSTAR qualquer aspecto de uma
+    tarefa existente: cor, escala, colunas, períodos, threshold, lógica, etc.
+    Este tool executa o fluxo completo:
+      1. Lê o código atual da tarefa
+      2. Aplica a modificação via LLM
+      3. Testa o código modificado (até 3 tentativas de correção automática)
+      4. Salva o código validado
+
+    Args:
+        task_id: ID da tarefa a editar (ex: "001", "42").
+        modificacao: O que deve ser alterado. Exemplos:
+                     "Mude a cor das barras para laranja"
+                     "Adicione linha de meta (target) no gráfico"
+                     "Mude o threshold de OEE de 80% para 75%"
+    """
+    if _scheduling_graph is None:
+        return "SchedulingGraph não inicializado."
+
+    session_id = _current_session.get()
+    _push_event(session_id, {"type": "tool", "name": "editar_tarefa_agendada", "label": "✏️ Editando código da tarefa"})
+
+    initial_state: SchedulingState = {
+        "mode": "edit",
+        "session_id": session_id,
+        "user_request": modificacao,
+        "task_id": task_id,
+        "task_name": "",
+        "task_code": "",
+        "error": "",
+        "retries": 0,
+        "result": "",
+    }
+
+    resultado = _scheduling_graph.invoke(initial_state)  # type: ignore[arg-type]
+    return resultado.get("result", "Tarefa atualizada.")
 
 
 # ── Orquestrador ──────────────────────────────────────────────────────────────
@@ -1504,126 +2164,32 @@ def _build_orchestrator(llm, checkpointer=None):
         "O UUID está no histórico no formato [chart:UUID].\n\n"
         "REGRA CRÍTICA: na dúvida entre A e C, escolha A. Nunca inicie um fluxo de agendamento\n"
         "a menos que o usuário tenha usado explicitamente palavras de agendamento (categoria C).\n\n"
-        "## Agendamento de tarefas — fluxo obrigatório ao CRIAR uma tarefa nova\n"
-        "Quando o usuário pedir para criar uma tarefa agendada, siga EXATAMENTE estes passos\n"
-        "SEM fazer perguntas ao usuário — infira nome e descrição a partir do contexto:\n\n"
-        "1. Chame gerenciar_agenda para criar a tarefa. Gere nome e descrição você mesmo\n"
-        "   com base no pedido do usuário. NUNCA peça ao usuário para fornecer descrição.\n"
-        "   A resposta contém o ID no formato **[NNN]** — extraia e guarde esse ID.\n\n"
-        "2. Execute a tarefa IMEDIATAMENTE chamando consultar_analista() com\n"
-        "   para_agendamento=True. Isso faz o sub-agente retornar, além da análise normal,\n"
-        "   um bloco ```task_context``` com endpoint real, colunas reais e código pandas\n"
-        "   exatamente como foram executados. Leia esse bloco com atenção.\n"
-        "   ⛔ PROIBIDO pular este passo — mesmo para monitores simples, você NUNCA sabe\n"
-        "   de antemão o nome exato das colunas, o endpoint correto ou o valor atual.\n"
-        "   Pular o passo 2 e adivinhar colunas gera task_code quebrado.\n"
-        "   ⚠️ OBRIGATÓRIO: antes de consultar_analista, chame calcular_periodo('hoje')\n"
-        "   para obter from_date e to_date corretos. NUNCA escreva datas manualmente —\n"
-        "   datas hardcoded ficam desatualizadas e causam falha na busca de dados.\n\n"
-        "3. Escreva o task_code com base EXCLUSIVAMENTE no bloco task_context do passo 2.\n"
-        "   REGRAS OBRIGATÓRIAS ao escrever o código:\n"
-        "   a) NUNCA escreva datas específicas como '2026-05-18' — elas ficam desatualizadas.\n"
-        "   b) 'produção de hoje' / 'do dia' / QUALQUER MONITOR → use ctx.today():\n"
-        "      hoje = ctx.today()\n"
-        "      ctx.api(f'/production/historical?from={hoje}&to={hoje}')\n"
-        "      ⚠️ REGRA CRÍTICA PARA MONITORES (every_5m, every_Xh, every_Xm):\n"
-        "      SEMPRE use ctx.today() — NUNCA use from_date/to_date em monitores.\n"
-        "      Os parâmetros from_date/to_date num monitor every_5m NÃO representam hoje.\n"
-        "   c) 'últimos N dias' → use ctx.date_range(days=N):\n"
-        "      from_date, to_date = ctx.date_range(days=7)\n"
-        "      ctx.api(f'/production/historical?from={from_date}&to={to_date}')\n"
-        "   d) 'período da tarefa' (relatórios daily/weekly/monthly) → use os parâmetros recebidos:\n"
-        "      ctx.api(f'/production/historical?from={from_date}&to={to_date}')\n"
-        "   e) Use apenas colunas e endpoints observados no bloco task_context.\n"
-        "   f) Nunca invente nomes de colunas ou endpoints.\n"
-        "   g) NUNCA use import dentro de run() — pd, np, plt, etc já estão disponíveis.\n"
-        "   h) Sempre chame ctx.save_chart(fig), ctx.generate_excel(...) ou ctx.generate_pdf(...)\n"
-        "      e retorne o token resultante. NUNCA retorne a figura diretamente.\n"
-        "   i) MONITORES E ALERTAS: se a tarefa monitora qualquer condição e chama ctx.notify(),\n"
-        "      o run() DEVE sempre retornar um resumo do estado atual como string — mesmo quando\n"
-        "      a condição não for verdadeira. Isso valida que o cálculo funciona no test_task_code.\n"
-        "      Exemplos obrigatórios:\n"
-        "        # Numérico:\n"
-        "        oee = df['oee_a'].mean()\n"
-        "        if oee < 80: ctx.notify(f'OEE {oee:.1f}% abaixo de 80%', value=oee, threshold=80)\n"
-        "        return f'OEE: {oee:.2f}% (ref: 80%)'\n"
-        "        # Status/string:\n"
-        "        status = df[df['line_id']==1]['status'].iloc[0]\n"
-        "        if status == 'Inoperante': ctx.notify(f'Linha 1 está Inoperante')\n"
-        "        return f'Linha 1 — status atual: {status}'\n"
-        "      Se o valor retornado for NaN, vazio ou None, corrija o código antes de avançar.\n\n"
-        "4. Chame test_task_code(task_id=ID, code=CÓDIGO_COMPLETO) com o ID extraído no passo 1.\n"
-        "   Se retornar erro, corrija o código e teste novamente. NUNCA avance com erro.\n"
-        "   Para MONITORES: verifique se o output do teste mostra um valor numérico coerente.\n"
-        "   Se o output for vazio, NaN ou inesperado, a métrica não pôde ser calculada —\n"
-        "   informe o usuário e NÃO salve a tarefa.\n"
-        "   ✅ Guarde o output do teste — você vai usá-lo na resposta final.\n\n"
-        "5. Chame save_task_code(task_id=ID, code=CÓDIGO_COMPLETO) para persistir.\n\n"
-        "6. Para tarefas normais, responda neste formato:\n"
-        "   'Tarefa **[ID]** criada e agendada.\n\n"
-        "   Para ajustar, diga: **editar tarefa [ID]**'\n\n"
-        "   Para MONITORES DE THRESHOLD, use este formato:\n"
-        "   'Monitor **[ID]** ativo. Verificando a cada 5 minutos.\n\n"
-        "   **Resultado do teste agora:** [output literal do test_task_code]\n"
-        "   **Threshold configurado:** [valor do threshold]\n\n"
-        "   Você receberá uma notificação 🔔 no header sempre que o threshold for cruzado.\n\n"
-        "   Para ajustar, diga: **editar tarefa [ID]**'\n\n"
-        "   NÃO inclua tokens [chart:uuid], [pdf:uuid] ou [excel:uuid] na resposta —\n"
-        "   os artefatos já foram enviados ao chat automaticamente pelo test_task_code.\n\n"
-        "## Monitores e alertas — regras especiais\n"
-        "Quando o usuário pedir para MONITORAR qualquer condição ou receber NOTIFICAÇÃO sobre algo\n"
-        "(palavras-chave: 'me avise', 'alerta se', 'monitore', 'notifique', 'avise quando',\n"
-        "'me notifique', 'fique de olho', 'avise se'),\n"
-        "a condição pode ser de QUALQUER tipo — não apenas numérica:\n"
-        "  Exemplos válidos:\n"
-        "  - 'Me avise se a produção passar 2000 unidades' → comparação numérica\n"
-        "  - 'Avise quando a Linha 1 ficar Inoperante' → comparação de status/string\n"
-        "  - 'Me notifique se houver mais de 3 ordens atrasadas' → contagem\n"
-        "  - 'Alerta se o OEE cair abaixo de 75%' → threshold percentual\n"
-        "  - 'Me avise se o turno B produzir menos que o turno A' → comparação relativa\n\n"
-        "Aplique estas regras SEM perguntar nada ao usuário:\n"
-        "  - Frequência: every_5m (verifica a cada 5 minutos). NUNCA peça horário.\n"
-        "  - Não há hora fixa — o monitor começa imediatamente e roda continuamente.\n"
-        "  - O task_code DEVE chamar ctx.notify(message) quando a condição for verdadeira.\n"
-        "    Para condições numéricas: ctx.notify(msg, value=valor, threshold=ref)\n"
-        "    Para condições de status/string: ctx.notify(msg) — sem value/threshold\n"
-        "  - O task_code DEVE retornar um resumo do estado atual como string\n"
-        "    (para validação no teste), mesmo quando a condição não for verdadeira.\n"
-        "  - OBRIGATÓRIO: siga o passo 2 (consultar_analista com para_agendamento=True) para\n"
-        "    descobrir o endpoint exato e as colunas/valores reais antes de escrever código.\n"
-        "    Nunca assuma nomes de colunas, valores de status ou estrutura de dados.\n"
-        "    ⚠️ ARMADILHA COMUM: status fields retornam valores em inglês (ex: 'stopped',\n"
-        "    'running', 'maintenance'). NUNCA traduza para português no código sem ter\n"
-        "    observado o valor real retornado pela API no passo 2.\n\n"
-        "## Frequências suportadas — use exatamente estes valores\n"
-        "once | daily | weekly (requer weekday) | monthly (requer day) |\n"
-        "every_Xm (ex: every_2m, every_30m) | every_Xh (ex: every_6h) | every_Xd (ex: every_3d)\n"
-        "NUNCA diga que uma frequência não é suportada sem verificar esta lista.\n\n"
-        "## Edição de tarefa existente — fluxo obrigatório\n"
-        "Quando o usuário pedir para editar/ajustar uma tarefa (cor, layout, métricas, período,\n"
-        "qualquer detalhe do relatório), siga EXATAMENTE estes passos:\n\n"
-        "1. Chame get_task_code(task_id=ID) para obter o código atual completo.\n\n"
-        "2. Modifique o código fazendo APENAS a mudança mínima necessária.\n"
-        "   Preserve o restante exatamente como está — nomes de variáveis, estrutura,\n"
-        "   endpoints, lógica, comentários. NÃO refatore, NÃO renomeie, NÃO 'melhore'.\n"
-        "   - Mudanças visuais (cor, escala, título, labels): edite só as linhas afetadas.\n"
-        "     NÃO chame consultar_analista — não é necessário.\n"
-        "   - Mudanças de dados (nova coluna, novo endpoint): chame\n"
-        "     consultar_analista(para_agendamento=True) para observar os dados reais.\n\n"
-        "3. Chame test_task_code(task_id=ID, code=CÓDIGO_COMPLETO_MODIFICADO).\n"
-        "   Se retornar erro, corrija e teste novamente. NUNCA prossiga com erro.\n\n"
-        "4. Chame save_task_code(task_id=ID, code=CÓDIGO_COMPLETO_MODIFICADO).\n\n"
-        "5. Somente após save_task_code confirmar sucesso, responda neste formato:\n"
-        "   'Tarefa **[ID]** atualizada. [o que mudou]\n\n"
-        "   Para novos ajustes, diga: **editar tarefa [ID]**'\n\n"
-        "⚠️ ATENÇÃO — REGRAS CRÍTICAS:\n"
-        "- test_task_code e save_task_code enviam os artefatos automaticamente para o\n"
-        "  chat via stream. NÃO inclua tokens [chart:uuid], [pdf:uuid] ou [excel:uuid]\n"
-        "  na sua resposta — eles já aparecem no chat e ficariam duplicados.\n"
-        "- Gerar gráfico com consultar_analista NÃO salva o task_code. Só save_task_code persiste.\n"
-        "- Dizer 'tarefa atualizada' sem ter chamado save_task_code é errado.\n"
-        "- test_task_code e save_task_code recebem SEMPRE o código completo — não um diff.\n\n"
-        "Para listar, pausar ou deletar tarefas, use gerenciar_agenda normalmente.\n\n"
+        "## Agendamento de tarefas — CRIAR nova tarefa\n"
+        "Quando o usuário pedir para criar uma tarefa agendada (relatório periódico, monitor,\n"
+        "alerta automático), chame APENAS:\n\n"
+        "  criar_tarefa_agendada(instrucao='descrição completa do que a tarefa deve fazer,\n"
+        "                                   frequência e qualquer parâmetro relevante')\n\n"
+        "O fluxo completo (criar registro, executar análise, gerar código, testar, salvar)\n"
+        "é executado automaticamente dentro do tool. NUNCA faça esse fluxo manualmente.\n"
+        "NUNCA peça ao usuário nome ou descrição — infira do contexto.\n"
+        "Inclua na instrução: o que a tarefa faz, a frequência e (se mencionado) o horário.\n"
+        "Exemplos de instrucao:\n"
+        "  'Relatório semanal de OEE toda segunda às 8h'\n"
+        "  'Monitor de OEE a cada 5 minutos, alerta se OEE < 80%'\n"
+        "  'Planilha mensal de defeitos no dia 1 de cada mês'\n\n"
+        "Após criar_tarefa_agendada retornar, repasse o resultado ao usuário.\n"
+        "NÃO inclua tokens [chart:uuid], [pdf:uuid] ou [excel:uuid] na sua resposta —\n"
+        "os artefatos já foram enviados ao chat automaticamente.\n\n"
+        "## Agendamento de tarefas — EDITAR tarefa existente\n"
+        "Quando o usuário pedir para editar/ajustar qualquer aspecto de uma tarefa\n"
+        "(cor, escala, colunas, threshold, período, lógica), chame APENAS:\n\n"
+        "  editar_tarefa_agendada(task_id='ID', modificacao='o que deve mudar')\n\n"
+        "O fluxo completo (ler código atual, aplicar mudança, testar, salvar) é automático.\n"
+        "NUNCA leia, modifique ou salve o código manualmente para edição.\n"
+        "NÃO inclua tokens na sua resposta após a edição — os artefatos já foram enviados.\n\n"
+        "## Agendamento de tarefas — operações simples\n"
+        "Para LISTAR, PAUSAR, RETOMAR ou DELETAR tarefas: chame gerenciar_agenda(instrucao).\n"
+        "Para VER o código atual de uma tarefa: chame get_task_code(task_id=ID).\n\n"
         "## Painéis customizados no dashboard — fluxo obrigatório ao CRIAR\n"
         "Quando o usuário pedir para ADICIONAR/INSERIR/FIXAR um gráfico no dashboard,\n"
         "siga EXATAMENTE estes passos:\n\n"
@@ -1694,8 +2260,8 @@ def _build_orchestrator(llm, checkpointer=None):
         rag_dominio, rag_capacidades, rag_arquitetura, rag_dados,
         gerar_pdf, gerar_excel,
         gerenciar_agenda,
-        set_task_instructions,
-        get_task_code, test_task_code, save_task_code,
+        criar_tarefa_agendada, editar_tarefa_agendada,
+        get_task_code,
         test_widget_code, add_chart_to_dashboard,
         list_dashboard_widgets, delete_dashboard_widget,
         get_widget_code, update_widget,
@@ -1703,70 +2269,22 @@ def _build_orchestrator(llm, checkpointer=None):
     llm_orq = llm.bind_tools(orq_tools)
     no_orq_tools = ToolNode(orq_tools)
 
-    # ── Flows que exigem sequência de tools obrigatória ──────────────────────
-    # Mapeamento: tool que inicia o fluxo → tools que devem ter sido chamadas
-    # antes de o orquestrador poder finalizar a resposta.
-    _REQUIRED_AFTER: dict[str, list[str]] = {
-        "get_task_code": ["save_task_code"],
-    }
-
-    def _tools_since_last_human(messages: list) -> set[str]:
-        """Tools (por nome) chamadas desde a última mensagem do usuário."""
-        called = set()
-        for msg in reversed(messages):
-            from langchain_core.messages import HumanMessage as _HM
-            if isinstance(msg, _HM):
-                break
-            if hasattr(msg, "name") and msg.name:   # ToolMessage
-                called.add(msg.name)
-            if hasattr(msg, "tool_calls"):           # AIMessage com tool_calls
-                for tc in (msg.tool_calls or []):
-                    called.add(tc["name"])
-        return called
-
     def no_orquestrador(state: State) -> dict:
         historico_recente = state["messages"][-(MAX_INTERACOES * 2):]
         msgs = [SystemMessage(content=ORQ_SYSTEM_PROMPT)] + historico_recente
         return {"messages": [llm_orq.invoke(msgs)]}
 
-    def no_guardia(state: State) -> dict:
-        """Nó de validação determinístico — injeta correção se fluxo incompleto."""
-        called = _tools_since_last_human(state["messages"])
-        for trigger, required in _REQUIRED_AFTER.items():
-            if trigger in called:
-                missing = [t for t in required if t not in called]
-                if missing:
-                    from langchain_core.messages import HumanMessage as _HM
-                    correction = (
-                        f"[VALIDAÇÃO AUTOMÁTICA] Você chamou `{trigger}` mas não chamou "
-                        f"`{'`, `'.join(missing)}`. O fluxo está incompleto — o task_code "
-                        f"não foi salvo no banco. Retome: modifique o código, chame "
-                        f"test_task_code(task_id, code) e depois save_task_code(task_id, code)."
-                    )
-                    return {"messages": [_HM(content=correction)]}
-        return {"messages": []}
-
     def orq_para_onde(state: State) -> str:
         ultima = state["messages"][-1]
         if hasattr(ultima, "tool_calls") and ultima.tool_calls:
             return "tools"
-        return "guardia"   # sempre passa pelo guardião antes de finalizar
-
-    def guardia_para_onde(state: State) -> str:
-        """Se o guardião injetou uma correção, volta ao orquestrador. Senão, finaliza."""
-        ultima = state["messages"][-1]
-        from langchain_core.messages import HumanMessage as _HM
-        if isinstance(ultima, _HM) and ultima.content.startswith("[VALIDAÇÃO AUTOMÁTICA]"):
-            return "orquestrador"
         return END
 
     builder = StateGraph(State)
     builder.add_node("orquestrador", no_orquestrador)
     builder.add_node("tools", no_orq_tools)
-    builder.add_node("guardia", no_guardia)
     builder.add_edge(START, "orquestrador")
-    builder.add_conditional_edges("orquestrador", orq_para_onde, {"tools": "tools", "guardia": "guardia"})
-    builder.add_conditional_edges("guardia", guardia_para_onde, {"orquestrador": "orquestrador", END: END})
+    builder.add_conditional_edges("orquestrador", orq_para_onde, {"tools": "tools", END: END})
     builder.add_edge("tools", "orquestrador")
 
     return builder.compile(checkpointer=checkpointer)
@@ -1776,7 +2294,7 @@ def _build_orchestrator(llm, checkpointer=None):
 
 def init_multi_agent(project: str, location: str, model_name: str, credentials=None) -> None:
     """Inicializa orquestrador e sub-agente. Chamado no startup do FastAPI."""
-    global _orchestrator_graph, _sub_agent_graph, _scheduler_agent_graph, _checkpointer
+    global _orchestrator_graph, _sub_agent_graph, _scheduler_agent_graph, _scheduling_graph, _checkpointer
     try:
         from langchain_google_vertexai import ChatVertexAI
         from langgraph.checkpoint.sqlite import SqliteSaver
@@ -1797,8 +2315,9 @@ def init_multi_agent(project: str, location: str, model_name: str, credentials=N
         chart_store.init_chart_store(DB_PATH)
         _sub_agent_graph = _build_sub_agent(llm)
         _scheduler_agent_graph = _build_scheduler_agent(llm)
+        _scheduling_graph = _build_scheduling_graph(llm)
         _orchestrator_graph = _build_orchestrator(llm, _checkpointer)
-        logger.info("Multi-agente inicializado: orquestrador + analista + scheduler")
+        logger.info("Multi-agente inicializado: orquestrador + analista + scheduler + scheduling_graph")
     except Exception:
         import traceback
         logger.warning("Falha ao inicializar multi-agente:\n%s", traceback.format_exc())

@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/production/historical`
+`GET /production/historical`
 
 ---
 

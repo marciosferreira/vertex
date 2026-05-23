@@ -1,0 +1,1 @@
+Produção diária em 2026-05-22: 4187 unidades (Meta: 4320 unidades). [chart:ada8aa71-a3e4-4270-81cd-453475206609]

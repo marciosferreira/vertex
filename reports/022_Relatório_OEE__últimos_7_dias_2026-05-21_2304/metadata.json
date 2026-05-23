@@ -1,0 +1,14 @@
+{
+  "task_id": "022",
+  "task_name": "Relatório OEE (últimos 7 dias)",
+  "run_at": "2026-05-21T23:04:03.595724",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "every_6h",
+    "weekday": null,
+    "day": null,
+    "time": null
+  }
+}

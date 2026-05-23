@@ -1,0 +1,16 @@
+{
+  "task_id": "043",
+  "task_name": "Relatório de produção (7 dias)",
+  "run_at": "2026-05-23T07:44:05.118893",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/be7cb369-bc78-48ff-a020-838103c42c3f"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_6h",
+    "weekday": null,
+    "day": null,
+    "time": null
+  }
+}

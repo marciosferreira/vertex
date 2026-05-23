@@ -11,13 +11,13 @@ Todos os endpoints aceitam os seguintes filtros opcionais via query string:
 | `shift`   | `A`, `B` ou `C`| Filtra por turno (omitir = todos os turnos agregados)  |
 | `line`    | `1`, `2`, `3` ou `4` | Filtra por linha de produção                    |
 
-Filtrar por modelo é equivalente a filtrar pela linha correspondente
-(Linha 1 = PhoneX Pro, Linha 2 = PhoneX Lite, Linha 3 = PhoneX Ultra, Linha 4 = PhoneX Mini).
+O filtro correto é sempre `line=<número>`. O nome do modelo associado a cada linha pode mudar; para descobrir o modelo atual de cada linha, use `GET /lines`.
 
 ### Endpoints principais
 
 | Método | Endpoint                  | Descrição                                                           |
 |--------|---------------------------|---------------------------------------------------------------------|
+| GET    | `/lines`                  | Linhas de produção com modelo atual (`id`, `name`, `model`)         |
 | GET    | `/production/historical`  | Dados históricos diários: produção, defeitos, FPY, OEE, eficiência  |
 | GET    | `/production/hourly`      | Produção hora a hora — requer `shift`                               |
 | GET    | `/lines/status`           | Status em tempo real das quatro linhas                              |

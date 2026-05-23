@@ -9,18 +9,44 @@ from datetime import date, timedelta
 
 
 class TaskContext:
-    def __init__(self, session_id: str, backend_url: str = "http://localhost:8000", user_id: str | None = None):
+    def __init__(self, session_id: str, backend_url: str = "http://localhost:8000", user_id: str | None = None, is_test: bool = False):
         self.session_id = session_id
         self.user_id    = user_id
         self._backend_url = backend_url.rstrip("/")
         self._tokens: list[str] = []
+        self._is_test = is_test
+        self._test_alerts: list[dict] = []  # alertas capturados durante teste (não persistidos)
 
     # ── API local ─────────────────────────────────────────────────────────────
+
+    _VALID_PREFIXES = (
+        "/production/historical",
+        "/production/hourly",
+        "/production",
+        "/defects",
+        "/metrics",
+        "/kpis",
+        "/lines/status",
+        "/lines",
+        "/alerts",
+    )
 
     def api(self, path: str) -> any:
         """GET na API local. path deve começar com '/'.
         Retorna o JSON deserializado (dict ou list)."""
         import requests
+        from urllib.parse import urlparse
+        # tolerância: se vier URL completa, extrai só o path+query
+        if path.startswith("http://") or path.startswith("https://"):
+            parsed = urlparse(path)
+            path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        base = path.split("?")[0].rstrip("/")
+        if not any(base == p or base.startswith(p + "/") for p in self._VALID_PREFIXES):
+            valid = ", ".join(self._VALID_PREFIXES)
+            raise ValueError(
+                f"Endpoint '{base}' não existe na API. "
+                f"Endpoints válidos: {valid}"
+            )
         url = self._backend_url + path
         res = requests.get(url, timeout=30)
         res.raise_for_status()
@@ -30,11 +56,12 @@ class TaskContext:
         """Retorna a data de hoje no formato YYYY-MM-DD. Use para tarefas de 'hoje'."""
         return date.today().isoformat()
 
-    def date_range(self, days: int = 7) -> tuple[str, str]:
-        """Retorna (from_date, to_date) para os últimos N dias, formato YYYY-MM-DD."""
+    def date_range(self, days: int = 7) -> tuple:
+        """Retorna (from_date, to_date) como objetos date para os últimos N dias.
+        Use str(from_date) ou from_date.strftime(...) conforme necessário."""
         end   = date.today()
         start = end - timedelta(days=days - 1)
-        return start.isoformat(), end.isoformat()
+        return start, end
 
     # ── Gerar artifacts (reutilizam funções existentes do agente) ─────────────
 
@@ -158,6 +185,10 @@ class TaskContext:
             value: Valor numérico observado (opcional, exibido no painel).
             threshold: Valor de referência (opcional, exibido no painel).
         """
+        if self._is_test:
+            # Teste: captura sem persistir no painel de alertas
+            self._test_alerts.append({"message": message, "value": value, "threshold": threshold})
+            return
         import chart_store
         chart_store.save_alert(self.session_id, message, value, threshold, user_id=self.user_id)
 
@@ -169,3 +200,7 @@ class TaskContext:
 
     def tokens(self) -> list[str]:
         return list(self._tokens)
+
+    def test_alerts(self) -> list[dict]:
+        """Alertas capturados durante teste (não foram salvos no painel)."""
+        return list(self._test_alerts)

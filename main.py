@@ -35,9 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from db import get_db, init_db, migrate_db, shift_dates_to_today, LINE_MODEL
-
-MODEL_LINE = {v: k for k, v in LINE_MODEL.items()}  # "PhoneX Pro" → 1, etc.
+from db import get_db, init_db, migrate_db, shift_dates_to_today
 
 try:
     from dotenv import load_dotenv
@@ -636,13 +634,13 @@ def get_tasks(user_id: str = Query(default=None)):
             tasks = conn.execute(
                 "SELECT id, name, description, frequency, time, weekday, day, "
                 "email, status, next_run, last_run, created_at, retry_count, max_retries "
-                "FROM scheduled_tasks WHERE user_id=? ORDER BY id", (user_id,)
+                "FROM scheduled_tasks WHERE user_id=? ORDER BY id DESC", (user_id,)
             ).fetchall()
         else:
             tasks = conn.execute(
                 "SELECT id, name, description, frequency, time, weekday, day, "
                 "email, status, next_run, last_run, created_at, retry_count, max_retries "
-                "FROM scheduled_tasks ORDER BY id"
+                "FROM scheduled_tasks ORDER BY id DESC"
             ).fetchall()
         task_ids = tuple(dict(t)["id"] for t in tasks)
         runs = (
@@ -682,6 +680,47 @@ def get_task_runs(task_id: str, user_id: str = Query(default=None)):
             (task_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@app.get("/tasks/{task_id}/code-audit")
+def get_task_code_audit(task_id: str):
+    """Retorna histórico de erros de geração/correção de task_code para auditoria."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, task_id, attempt, phase, error, code, created_at "
+            "FROM task_code_audit WHERE task_id=? ORDER BY created_at DESC",
+            (task_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/tasks/code-audit/summary")
+def get_code_audit_summary():
+    """Resumo de erros de geração de código: padrões, módulos bloqueados, frequência."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, task_id, attempt, phase, error, code, created_at "
+            "FROM task_code_audit ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.delete("/tasks/code-audit/{audit_id}")
+def delete_code_audit_entry(audit_id: int):
+    with get_db() as conn:
+        cur = conn.execute("DELETE FROM task_code_audit WHERE id = ?", (audit_id,))
+        conn.commit()
+    if cur.rowcount == 0:
+        return JSONResponse(status_code=404, content={"error": "Entrada não encontrada."})
+    return {"ok": True}
+
+
+@app.delete("/tasks/code-audit")
+def delete_all_code_audit():
+    with get_db() as conn:
+        conn.execute("DELETE FROM task_code_audit")
+        conn.commit()
+    return {"ok": True}
 
 
 @app.post("/tasks/{task_id}/run-now")
@@ -733,6 +772,30 @@ def delete_task_endpoint(task_id: str, user_id: str = Query(default=None)):
         conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
         conn.commit()
     return {"ok": True, "deleted": task_id}
+
+
+@app.get("/tasks/{task_id}/code")
+def get_task_code(task_id: str, user_id: str = Query(default=None)):
+    """Retorna o código atual da tarefa e o histórico de versões anteriores."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name, task_code, instructions FROM scheduled_tasks WHERE id=?"
+            + (" AND user_id=?" if user_id else ""),
+            (task_id, user_id) if user_id else (task_id,),
+        ).fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": True, "message": f"Task {task_id} não encontrada."})
+        versions = conn.execute(
+            "SELECT version, code, created_at FROM task_code_versions WHERE task_id=? ORDER BY version DESC",
+            (task_id,),
+        ).fetchall()
+    return {
+        "task_id": task_id,
+        "name": row["name"],
+        "task_code": row["task_code"],
+        "instructions": row["instructions"],
+        "versions": [dict(v) for v in versions],
+    }
 
 
 @app.get("/artifacts")
@@ -877,18 +940,17 @@ def get_production(
 def get_historical_compat(
     range_: str = Query(default="7d", alias="range"),
     shift:     Optional[Literal["A", "B", "C"]] = None,
-    model:     Optional[str] = None,
+    line:      Optional[int] = None,
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
 ):
     """Endpoint de compatibilidade com o dashboard. Monta o formato antigo a partir das novas tabelas."""
-    shift_filter     = "AND p.shift = ?" if shift else ""
-    shift_filter_d   = "AND d.shift = ?" if shift else ""
-    shift_params     = [shift] if shift else []
-    model_filter     = "AND p.model = ?" if model else ""
-    model_params     = [model] if model else []
-    # defeitos filtrados por linha quando modelo está ativo (defects não tem coluna model)
-    line_filter_d    = f"AND d.line = {MODEL_LINE[model]}" if model else ""
+    shift_filter   = "AND p.shift = ?" if shift else ""
+    shift_filter_d = "AND d.shift = ?" if shift else ""
+    shift_params   = [shift] if shift else []
+    line_filter    = "AND p.line = ?" if line else ""
+    line_params    = [line] if line else []
+    line_filter_d  = "AND d.line = ?" if line else ""
 
     if range_ == "shift":
         with get_db() as conn:
@@ -929,12 +991,12 @@ def get_historical_compat(
 
     with get_db() as conn:
         prod = {r["date"]: dict(r) for r in conn.execute(
-            f"SELECT date, SUM(produced) as produced, SUM(target) as target FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {model_filter} GROUP BY date",
-            [start, end] + shift_params + model_params,
+            f"SELECT date, SUM(produced) as produced, SUM(target) as target FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {line_filter} GROUP BY date",
+            [start, end] + shift_params + line_params,
         ).fetchall()}
         lines = conn.execute(
-            f"SELECT date, line, SUM(produced) as produced FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {model_filter} GROUP BY date, line",
-            [start, end] + shift_params + model_params,
+            f"SELECT date, line, SUM(produced) as produced FROM production p WHERE p.date BETWEEN ? AND ? {shift_filter} {line_filter} GROUP BY date, line",
+            [start, end] + shift_params + line_params,
         ).fetchall()
         metrics_rows = {r["date"]: dict(r) for r in conn.execute(
             "SELECT * FROM metrics WHERE date BETWEEN ? AND ? ORDER BY date",
@@ -942,21 +1004,21 @@ def get_historical_compat(
         ).fetchall()}
         def_total = {r["date"]: r["count"] for r in conn.execute(
             f"SELECT date, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} {line_filter_d} GROUP BY date",
-            [start, end] + shift_params,
+            [start, end] + shift_params + line_params,
         ).fetchall()}
         def_cat = conn.execute(
             f"SELECT date, category, SUM(count) as count FROM defects d WHERE d.date BETWEEN ? AND ? {shift_filter_d} {line_filter_d} GROUP BY date, category",
-            [start, end] + shift_params,
+            [start, end] + shift_params + line_params,
         ).fetchall()
 
-        # quando modelo filtrado, eficiência por turno vem da production (produzido/meta×100)
-        # sem filtro de modelo, vem da tabela metrics (factory-wide)
+        # quando linha filtrada, eficiência por turno vem da production (produzido/meta×100)
+        # sem filtro de linha, vem da tabela metrics (factory-wide)
         eff_by_date: dict = {}
-        if model:
+        if line:
             for r in conn.execute(
                 f"SELECT date, shift, ROUND(CAST(SUM(produced) AS REAL) / SUM(target) * 100, 1) as eff "
-                f"FROM production p WHERE p.date BETWEEN ? AND ? {model_filter} GROUP BY date, shift",
-                [start, end] + model_params,
+                f"FROM production p WHERE p.date BETWEEN ? AND ? {line_filter} GROUP BY date, shift",
+                [start, end] + line_params,
             ).fetchall():
                 eff_by_date.setdefault(r["date"], {})[r["shift"]] = r["eff"]
 
@@ -981,13 +1043,13 @@ def get_historical_compat(
         ld = line_by_date.get(d, {})
         dd = def_by_date.get(d, {})
         # FPY e OEE: usa o valor do turno selecionado, ou média dos três
-        if model:
+        if line:
             p = prod[d]["produced"]
             d_count = def_total.get(d, 0)
             fpy = round((p - d_count) / p * 100, 1) if p > 0 else 0
         else:
             fpy = m.get(fpy_key, 0) if fpy_key else round((m.get("fpy_a",0) + m.get("fpy_b",0) + m.get("fpy_c",0)) / 3, 1)
-        if model:
+        if line:
             avail = m.get("availability", 0) / 100
             perf  = m.get("performance",  0) / 100
             oee   = round(avail * perf * (fpy / 100) * 100, 1)
@@ -1005,9 +1067,9 @@ def get_historical_compat(
             "performance":  m.get("performance", 0),
             "line1": ld.get(1, 0), "line2": ld.get(2, 0),
             "line3": ld.get(3, 0), "line4": ld.get(4, 0),
-            "shift_a_efficiency": (eff_by_date.get(d, {}).get("A", 0) if model else m.get("shift_a_efficiency", 0)) if not shift or shift == "A" else 0,
-            "shift_b_efficiency": (eff_by_date.get(d, {}).get("B", 0) if model else m.get("shift_b_efficiency", 0)) if not shift or shift == "B" else 0,
-            "shift_c_efficiency": (eff_by_date.get(d, {}).get("C", 0) if model else m.get("shift_c_efficiency", 0)) if not shift or shift == "C" else 0,
+            "shift_a_efficiency": (eff_by_date.get(d, {}).get("A", 0) if line else m.get("shift_a_efficiency", 0)) if not shift or shift == "A" else 0,
+            "shift_b_efficiency": (eff_by_date.get(d, {}).get("B", 0) if line else m.get("shift_b_efficiency", 0)) if not shift or shift == "B" else 0,
+            "shift_c_efficiency": (eff_by_date.get(d, {}).get("C", 0) if line else m.get("shift_c_efficiency", 0)) if not shift or shift == "C" else 0,
             "defect_screen":  dd.get("Tela (display)", 0),
             "defect_camera":  dd.get("Câmera", 0),
             "defect_battery": dd.get("Bateria", 0),
@@ -1021,20 +1083,20 @@ def get_hourly_production(
     shift:     Literal["A", "B", "C"] = "A",
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
-    model:     Optional[str] = None,
+    line:      Optional[int] = None,
 ):
     """
     Média e desvio padrão de produção por hora do turno no período.
-    Sem from/to: últimos 7 dias. Filtre por modelo para ver uma linha específica.
+    Sem from/to: últimos 7 dias. Filtre por linha para ver uma linha específica.
 
     Exemplos:
       /production/hourly?shift=A
-      /production/hourly?shift=B&from=2026-05-01&to=2026-05-15&model=PhoneX+Pro
+      /production/hourly?shift=B&from=2026-05-01&to=2026-05-15&line=1
     """
     start = from_date or default_range()[0]
     end   = to_date   or default_range()[1]
     with get_db() as conn:
-        if model:
+        if line:
             # Filtra uma linha: AVG direto por hora
             rows = conn.execute(
                 """
@@ -1046,11 +1108,11 @@ def get_hourly_production(
                     ROUND(SQRT(MAX(0.0, AVG(defects*defects) - AVG(defects)*AVG(defects))), 1)    AS stddev_defects,
                     ROUND(AVG(target), 0)    AS avg_target
                 FROM hourly_production
-                WHERE shift = ? AND date BETWEEN ? AND ? AND model = ?
+                WHERE shift = ? AND date BETWEEN ? AND ? AND line = ?
                 GROUP BY hour
                 ORDER BY MIN(id)
                 """,
-                (shift, start, end, model),
+                (shift, start, end, line),
             ).fetchall()
         else:
             # Sem modelo: soma todas as linhas por (date, hour), depois AVG entre dias
@@ -1089,7 +1151,6 @@ def get_defects(
     shift:     Optional[Literal["A", "B", "C"]] = None,
     line:      Optional[int] = None,
     category:  Optional[str] = None,
-    model:     Optional[str] = None,
 ):
     """
     Sem `category`: retorna defeitos agregados por categoria no período.
@@ -1098,10 +1159,9 @@ def get_defects(
     Exemplos:
       /defects?from=2026-05-01&to=2026-05-15&line=1
       /defects?from=2026-05-01&to=2026-05-15&category=Tela (display)
-      /defects?from=2026-05-01&to=2026-05-15&shift=A&model=PhoneX+Pro
+      /defects?from=2026-05-01&to=2026-05-15&shift=A&line=1
     """
-    effective_line = MODEL_LINE.get(model) if model else line
-    clause, params = build_filters(from_date, to_date, shift, effective_line, table="d")
+    clause, params = build_filters(from_date, to_date, shift, line, table="d")
 
     if category:
         with get_db() as conn:
@@ -1150,6 +1210,14 @@ def get_metrics(
 
 
 # ── status das linhas ─────────────────────────────────────────────────────────
+
+@app.get("/lines")
+def get_lines():
+    """Retorna as linhas de produção com o modelo que cada uma está produzindo atualmente."""
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, name, model FROM lines_status ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
 
 @app.get("/lines/status")
 def get_lines_status():
@@ -1206,7 +1274,7 @@ def get_kpis(
     shift:     Literal["A", "B", "C"] = "A",
     from_date: Optional[str] = Query(default=None, alias="from"),
     to_date:   Optional[str] = Query(default=None, alias="to"),
-    model:     Optional[str] = None,
+    line:      Optional[int] = None,
 ):
     """
     KPIs calculados dinamicamente para o período selecionado.
@@ -1214,16 +1282,14 @@ def get_kpis(
     """
     start = from_date or date.today().isoformat()
     end   = to_date   or date.today().isoformat()
-    model_clause  = "AND model = ?" if model else ""
-    model_params  = [model] if model else []
-    line_clause   = "AND line = ?" if model else ""
-    line_params   = [MODEL_LINE[model]] if model else []
+    line_clause  = "AND line = ?" if line else ""
+    line_params  = [line] if line else []
 
     with get_db() as conn:
         prod = conn.execute(
             f"SELECT SUM(produced) as produced, SUM(target) as target "
-            f"FROM production WHERE shift = ? AND date BETWEEN ? AND ? {model_clause}",
-            [shift, start, end] + model_params,
+            f"FROM production WHERE shift = ? AND date BETWEEN ? AND ? {line_clause}",
+            [shift, start, end] + line_params,
         ).fetchone()
 
         fpy_col = f"fpy_{shift.lower()}"

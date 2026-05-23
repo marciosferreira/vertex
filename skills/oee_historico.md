@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/production/historical`
+`GET /production/historical`
 
 ---
 
@@ -17,7 +17,7 @@
 | from      | string | YYYY-MM-DD      | Data inicial do período                         |
 | to        | string | YYYY-MM-DD      | Data final do período                           |
 | shift     | string | `A`, `B`, `C`   | Turno — omitir retorna média dos três turnos    |
-| model     | string | `PhoneX Pro`, `PhoneX Lite`, `PhoneX Ultra`, `PhoneX Mini` | Modelo do aparelho — ao filtrar, OEE usa qualidade do modelo (FPY) com disponibilidade/performance da fábrica |
+| line      | integer | `1`, `2`, `3`, `4` | Linha de produção — ao filtrar, OEE usa qualidade da linha (FPY) com disponibilidade/performance da fábrica |
 
 **Chave sugerida para chamar_api:** `producao`
 

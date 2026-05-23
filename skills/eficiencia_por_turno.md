@@ -8,7 +8,7 @@
 
 ### 1. Histórico diário (série temporal)
 
-`GET http://localhost:8000/production/historical`
+`GET /production/historical`
 
 Retorna eficiência de cada turno por dia. **Não passe `shift`** — sem filtro, os três turnos vêm preenchidos.
 
@@ -35,7 +35,7 @@ Colunas relevantes:
 
 ### 2. Snapshot atual por turno
 
-`GET http://localhost:8000/kpis?shift=A` (repetir para B e C)
+`GET /kpis?shift=A` (repetir para B e C)
 
 Retorna KPIs acumulados do dia para o turno selecionado.
 

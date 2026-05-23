@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/production/hourly`
+`GET /production/hourly`
 
 Retorna médias agregadas por hora no período. Sempre exige `shift`.
 
@@ -19,7 +19,7 @@ Retorna médias agregadas por hora no período. Sempre exige `shift`.
 | shift     | string | **sim**     | `A`, `B`, `C`   | Turno a consultar                            |
 | from      | string | não         | YYYY-MM-DD      | Data inicial — padrão: últimos 7 dias        |
 | to        | string | não         | YYYY-MM-DD      | Data final — padrão: últimos 7 dias          |
-| model     | string | não         | `PhoneX Pro`, `PhoneX Lite`, `PhoneX Ultra`, `PhoneX Mini` | Filtra por modelo/linha — omitir retorna agregado de todas as linhas |
+| line      | integer | não        | `1`, `2`, `3`, `4`                                         | Filtra por linha de produção — omitir retorna agregado de todas     |
 
 **Chave sugerida para chamar_api:** `hora_a`, `hora_b`, `hora_c` (uma por turno consultado)
 

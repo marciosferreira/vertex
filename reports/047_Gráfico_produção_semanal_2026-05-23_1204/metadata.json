@@ -1,0 +1,16 @@
+{
+  "task_id": "047",
+  "task_name": "Gráfico produção semanal",
+  "run_at": "2026-05-23T12:04:15.339341",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/27847b0d-c7de-4010-8e4b-6f998b62ac20"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_6h",
+    "weekday": null,
+    "day": null,
+    "time": null
+  }
+}

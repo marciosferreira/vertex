@@ -1,0 +1,14 @@
+{
+  "task_id": "042",
+  "task_name": "Monitorar produção diária",
+  "run_at": "2026-05-22T09:13:12.832532",
+  "status": "pending_send",
+  "pdf_urls": [],
+  "email": null,
+  "schedule": {
+    "frequency": "daily",
+    "weekday": null,
+    "day": null,
+    "time": null
+  }
+}

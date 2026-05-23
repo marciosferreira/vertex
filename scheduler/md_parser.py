@@ -21,7 +21,7 @@ def calculate_next_run(
     try:
         h, m = map(int, time_str.split(':'))
     except (ValueError, AttributeError):
-        h, m = 8, 0
+        h, m = now.hour, now.minute
 
     if frequency in ('once', 'daily'):
         candidate = now.replace(hour=h, minute=m, second=0, microsecond=0)

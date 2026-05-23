@@ -122,11 +122,32 @@ def migrate_db():
                 created_at  TEXT    NOT NULL,
                 user_id     TEXT
             )""",
+            # auditoria de erros durante geração/correção de task_code
+            """CREATE TABLE IF NOT EXISTS task_code_audit (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id     TEXT    NOT NULL,
+                attempt     INTEGER NOT NULL,
+                phase       TEXT    NOT NULL,
+                error       TEXT    NOT NULL,
+                code        TEXT,
+                created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_tca_task_id ON task_code_audit(task_id)",
         ):
             try:
                 conn.execute(stmt)
             except Exception:
                 pass  # coluna/tabela já existe
+        conn.commit()
+
+
+def log_task_code_error(task_id: str, attempt: int, phase: str, error: str, code: str | None = None) -> None:
+    """Registra um erro de geração/correção de task_code para auditoria."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO task_code_audit (task_id, attempt, phase, error, code) VALUES (?,?,?,?,?)",
+            (task_id, attempt, phase, error, code),
+        )
         conn.commit()
 
 
@@ -301,6 +322,16 @@ def init_db():
                 created_at  TEXT    NOT NULL,
                 user_id     TEXT
             );
+
+            -- Histórico de modelos por linha (qual modelo cada linha estava produzindo)
+            CREATE TABLE IF NOT EXISTS line_model_history (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                line       INTEGER NOT NULL,
+                model      TEXT    NOT NULL,
+                started_at TEXT    NOT NULL,
+                ended_at   TEXT                -- NULL = vigente hoje
+            );
+            CREATE INDEX IF NOT EXISTS idx_lmh_line ON line_model_history(line);
         """)
         _seed(conn)
         # Sincroniza a sequência com o MAX real do banco (idempotente)
@@ -386,6 +417,14 @@ def _seed(conn: sqlite3.Connection):
             (f"{today_str}T11:22:00", "critical", 3, "Taxa de defeito em tela > 5% — lote BT-4821 em revisão", 1),
         ],
     )
+
+    # ── line_model_history ────────────────────────────────────────────────────
+    if conn.execute("SELECT COUNT(*) FROM line_model_history").fetchone()[0] == 0:
+        first_day = (today - timedelta(days=89)).isoformat()
+        conn.executemany(
+            "INSERT INTO line_model_history (line, model, started_at, ended_at) VALUES (?,?,?,NULL)",
+            [(line, model, first_day) for line, model in LINE_MODEL.items()],
+        )
 
     # ── kpis ──────────────────────────────────────────────────────────────────
     conn.executemany(

@@ -1,0 +1,16 @@
+{
+  "task_id": "054",
+  "task_name": "PDF Produção",
+  "run_at": "2026-05-23T14:43:21.134737",
+  "status": "pending_send",
+  "pdf_urls": [
+    "http://localhost:8000/pdf/dc20f53b-c26a-4068-aefd-f03826ab9699"
+  ],
+  "email": null,
+  "schedule": {
+    "frequency": "every_6h",
+    "weekday": null,
+    "day": null,
+    "time": null
+  }
+}

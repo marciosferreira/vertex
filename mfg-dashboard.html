@@ -247,14 +247,21 @@
   .chat-hist-list::-webkit-scrollbar-thumb { background:rgba(56,189,248,.18); border-radius:2px; }
 
   .chat-hist-new {
-    display:flex; align-items:center; gap:8px; width:100%;
-    padding:13px 16px; background:none; border:none;
-    border-bottom:1px solid rgba(56,189,248,.1);
-    color:var(--cyan); font-size:12px;
-    font-family:'JetBrains Mono',monospace; letter-spacing:.05em;
-    cursor:pointer; text-align:left; flex-shrink:0; transition:background .15s;
+    display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    padding:12px 16px; margin-bottom:8px;
+    background:rgba(56,189,248,.08);
+    border:1.5px solid rgba(56,189,248,.35); border-radius:8px;
+    color:var(--cyan); font-size:13px; font-weight:600;
+    font-family:'JetBrains Mono',monospace; letter-spacing:.06em;
+    cursor:pointer; text-align:center; flex-shrink:0;
+    transition:background .18s, border-color .18s, box-shadow .18s;
+    box-shadow:0 0 10px rgba(56,189,248,.08);
   }
-  .chat-hist-new:hover { background:rgba(56,189,248,.06); }
+  .chat-hist-new:hover {
+    background:rgba(56,189,248,.18);
+    border-color:rgba(56,189,248,.7);
+    box-shadow:0 0 16px rgba(56,189,248,.25);
+  }
 
   .chat-hist-item {
     display:flex; align-items:center; gap:6px;
@@ -281,6 +288,45 @@
   .chi-del:hover { color:#f87171; background:rgba(248,113,113,.1); }
 
   .chat-hist-empty { text-align:center; color:var(--txt2); font-size:12px; padding:24px 16px; }
+
+  /* multi-select */
+  .chi-sel-btn {
+    background:none; border:1px solid var(--border); color:var(--txt2);
+    font-size:10px; padding:2px 7px; cursor:pointer; border-radius:4px;
+    transition:all .15s; font-family:'JetBrains Mono',monospace; letter-spacing:.05em;
+  }
+  .chi-sel-btn:hover { border-color:var(--cyan); color:var(--cyan); }
+  .chi-sel-btn.active { border-color:rgba(248,113,113,.5); color:#f87171; }
+  .chat-hist-sel-bar {
+    display:flex; align-items:center; gap:6px;
+    padding:7px 12px; border-bottom:1px solid rgba(248,113,113,.2);
+    background:rgba(248,113,113,.05); flex-shrink:0;
+  }
+  .chat-hist-sel-bar.hidden { display:none; }
+  .chat-hist-sel-count {
+    flex:1; font-size:10px; color:var(--txt2);
+    font-family:'JetBrains Mono',monospace;
+  }
+  .chat-hist-sel-all {
+    background:none; border:1px solid var(--border); color:var(--txt2);
+    font-size:10px; padding:2px 7px; cursor:pointer; border-radius:4px;
+    font-family:'JetBrains Mono',monospace; letter-spacing:.05em; transition:all .15s;
+  }
+  .chat-hist-sel-all:hover { border-color:var(--cyan); color:var(--cyan); }
+  .chat-hist-del-sel {
+    background:rgba(248,113,113,.12); border:1px solid rgba(248,113,113,.4);
+    color:#f87171; font-size:10px; padding:2px 8px; cursor:pointer;
+    border-radius:4px; font-family:'JetBrains Mono',monospace; letter-spacing:.05em; transition:all .15s;
+  }
+  .chat-hist-del-sel:hover:not(:disabled) { background:rgba(248,113,113,.22); }
+  .chat-hist-del-sel:disabled { opacity:.35; cursor:not-allowed; }
+  .chi-checkbox {
+    flex-shrink:0; width:15px; height:15px; cursor:pointer;
+    accent-color:var(--cyan); display:none; margin-right:2px;
+  }
+  #chatHistList.sel-mode .chi-checkbox { display:block; }
+  #chatHistList.sel-mode .chi-del { display:none !important; }
+  #chatHistList.sel-mode .chat-hist-item { cursor:pointer; }
 
   /* drag handle */
   .chat-resize-handle {
@@ -445,6 +491,12 @@
   }
   .chat-send:hover { background:#7dd3fc; box-shadow:0 4px 16px rgba(56,189,248,.45); }
   .chat-send:disabled { opacity:.3; cursor:not-allowed; box-shadow:none; }
+  .chat-send.loading { opacity:1 !important; cursor:wait; }
+  .chat-send.loading::after {
+    content:''; display:block; width:16px; height:16px;
+    border:2px solid rgba(10,14,20,.35); border-top-color:#0a0e14;
+    border-radius:50%; animation:spin .7s linear infinite;
+  }
   .chat-screenshot {
     width:36px; height:36px; flex-shrink:0; background:#1e293b;
     border:1px solid rgba(167,139,250,.25); color:#a78bfa; font-size:15px;
@@ -700,8 +752,8 @@
     </button>
     <button class="refresh-btn" id="agendaBtn" onclick="openAgenda()" style="position:relative;gap:6px;">
       🗓
-      <span id="agendaBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:#6366f1;color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 5px;letter-spacing:.04em;"></span>
-      Tarefas
+      <span id="agendaBadge" style="display:none;position:absolute;top:-7px;right:-4px;background:#6366f1;color:#fff;font-size:8px;font-weight:700;border-radius:99px;padding:1px 5px;letter-spacing:.08em;">NEW</span>
+      Tarefas<span id="agendaCount" style="color:#475569;font-size:11px;font-weight:400;"></span>
     </button>
     <button class="refresh-btn" onclick="openArtifacts()" style="position:relative;gap:6px;">
       🗂
@@ -725,6 +777,9 @@
   </button>
   <button class="tab-btn" id="tab-btn-exemplos" onclick="switchTab('exemplos')">
     <i class="fa-solid fa-terminal" style="margin-right:5px;"></i> Exemplos
+  </button>
+  <button onclick="openAudit()" title="Auditoria de erros de geração de código" style="margin-left:auto;background:none;border:1px solid #1e293b;border-radius:5px;color:#475569;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;padding:4px 10px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:color .15s,border-color .15s;" onmouseenter="this.style.color='#94a3b8';this.style.borderColor='#334155';" onmouseleave="this.style.color='#475569';this.style.borderColor='#1e293b';">
+    <i class="fa-solid fa-bug" style="font-size:10px;"></i> error audit
   </button>
 </nav>
 
@@ -779,6 +834,60 @@
   </div>
 </aside>
 
+<!-- ── Slide-over: Error Audit ───────────────────────────────────────────── -->
+<div id="auditOverlay" onclick="closeAudit()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
+<aside id="auditPanel" style="display:none;position:fixed;top:0;right:0;height:100vh;width:640px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#475569;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;">Dev Tool</div>
+      <div style="font-size:15px;font-weight:600;color:#f8fafc;">Error Audit <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#475569;font-weight:400;">— erros de geração de task_code</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button onclick="loadAudit()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:5px 10px;font-size:12px;cursor:pointer;">↺</button>
+      <button onclick="clearAllAudit()" style="background:none;border:1px solid #7f1d1d;border-radius:6px;color:#f87171;padding:5px 10px;font-size:12px;cursor:pointer;" title="Apagar todos os registros">🗑 Limpar tudo</button>
+      <button onclick="closeAudit()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:5px 10px;font-size:12px;cursor:pointer;">✕</button>
+    </div>
+  </div>
+  <!-- Resumo de padrões -->
+  <div id="auditSummary" style="flex-shrink:0;padding:12px 24px;border-bottom:1px solid #1e293b;display:flex;flex-wrap:wrap;gap:8px;"></div>
+  <!-- Filtro por task -->
+  <div style="flex-shrink:0;padding:10px 24px;border-bottom:1px solid #1e293b;display:flex;gap:8px;align-items:center;">
+    <input id="auditFilter" type="text" placeholder="filtrar por task_id ou erro…" oninput="renderAudit()" style="flex:1;background:#141c27;border:1px solid #1e293b;border-radius:5px;color:#e2e8f0;font-family:'JetBrains Mono',monospace;font-size:11px;padding:5px 10px;outline:none;">
+    <select id="auditSort" onchange="renderAudit()" style="background:#141c27;border:1px solid #1e293b;border-radius:5px;color:#94a3b8;font-size:11px;padding:5px 8px;cursor:pointer;">
+      <option value="newest">Mais recente</option>
+      <option value="task">Por task</option>
+    </select>
+  </div>
+  <!-- Toolbar de seleção -->
+  <div id="auditToolbar" style="display:none;align-items:center;justify-content:space-between;padding:8px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;background:#0d1829;">
+    <span id="auditSelCount" style="font-size:11px;color:#94a3b8;font-family:'JetBrains Mono',monospace;"></span>
+    <div style="display:flex;gap:8px;">
+      <button onclick="selectAllAudit()" style="background:none;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;padding:4px 10px;font-size:11px;cursor:pointer;" onmouseover="this.style.borderColor='#38bdf8';this.style.color='#38bdf8'" onmouseout="this.style.borderColor='#1e293b';this.style.color='#94a3b8'">Selecionar todos</button>
+      <button onclick="deleteSelectedAudit()" style="background:none;border:1px solid #7f1d1d;border-radius:6px;color:#f87171;padding:4px 10px;font-size:11px;cursor:pointer;" onmouseover="this.style.background='rgba(248,113,113,.1)'" onmouseout="this.style.background='none'">🗑 Apagar selecionados</button>
+    </div>
+  </div>
+  <!-- Lista de erros -->
+  <div id="auditList" style="flex:1;overflow-y:auto;padding:12px 24px;display:flex;flex-direction:column;gap:10px;">
+    <div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Clique em ↺ para carregar.</div>
+  </div>
+</aside>
+
+<!-- ── Modal: Audit Code ────────────────────────────────────────────────── -->
+<div id="auditCodeOverlay" onclick="closeAuditCode()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;backdrop-filter:blur(3px);"></div>
+<div id="auditCodeModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2001;background:#0f1520;border:1px solid #1e293b;border-radius:12px;width:min(800px,95vw);max-height:85vh;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.6);">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <span style="font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;color:#f87171;">ERROR AUDIT</span>
+      <span id="auditCodeModalTitle" style="margin-left:10px;font-size:13px;font-weight:600;color:#f1f5f9;"></span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="copyAuditCode()" id="auditCodeCopyBtn" style="font-size:11px;padding:4px 10px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;">Copiar</button>
+      <button onclick="closeAuditCode()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+  <pre id="auditCodeText" style="flex:1;overflow:auto;margin:0;padding:18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#94a3b8;line-height:1.6;white-space:pre;word-break:normal;background:#080d15;border-radius:0 0 12px 12px;"></pre>
+</div>
+
 <!-- ── Slide-over: Artifacts ────────────────────────────────────────────── -->
 <div id="artifactsOverlay" onclick="closeArtifacts()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;backdrop-filter:blur(2px);"></div>
 
@@ -794,6 +903,29 @@
   </div>
   <pre id="runErrorText" style="flex:1;overflow:auto;margin:0;padding:18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#fca5a5;line-height:1.6;white-space:pre-wrap;word-break:break-word;background:#080d15;border-radius:0 0 12px 12px;"></pre>
 </div>
+<!-- Modal: código da tarefa -->
+<div id="taskCodeOverlay" onclick="closeTaskCode()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;backdrop-filter:blur(3px);"></div>
+<div id="taskCodeModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2001;background:#0f1520;border:1px solid #1e293b;border-radius:12px;width:min(760px,95vw);max-height:85vh;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.6);">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e293b;flex-shrink:0;">
+    <div>
+      <span style="font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;color:#6366f1;">CÓDIGO DA TAREFA</span>
+      <span id="taskCodeModalTitle" style="margin-left:10px;font-size:13px;font-weight:600;color:#f1f5f9;"></span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="copyTaskCode()" id="taskCodeCopyBtn" style="font-size:11px;padding:4px 10px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;">Copiar</button>
+      <button onclick="closeTaskCode()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+  </div>
+  <div style="flex:1;overflow:auto;display:flex;flex-direction:column;">
+    <div id="taskCodeBody" style="flex:1;overflow:auto;">
+      <!-- conteúdo injetado via JS -->
+    </div>
+    <div id="taskCodeVersions" style="border-top:1px solid #1e293b;padding:12px 18px;flex-shrink:0;">
+      <!-- histórico de versões injetado via JS -->
+    </div>
+  </div>
+</div>
+
 <aside id="artifactsPanel" style="display:none;position:fixed;top:0;right:0;height:100vh;width:480px;max-width:95vw;background:#0f1520;border-left:1px solid #1e293b;z-index:1001;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;">
   <!-- Header -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #1e293b;flex-shrink:0;">
@@ -843,12 +975,8 @@
         <option value="B">Turno B</option>
         <option value="C">Turno C</option>
       </select>
-      <select class="cf-sel" id="kpiModelSel" onchange="refreshKPIs()">
-        <option value="all">Todos os modelos</option>
-        <option value="PhoneX Pro">PhoneX Pro</option>
-        <option value="PhoneX Lite">PhoneX Lite</option>
-        <option value="PhoneX Ultra">PhoneX Ultra</option>
-        <option value="PhoneX Mini">PhoneX Mini</option>
+      <select class="cf-sel" id="kpiLineSel" onchange="refreshKPIs()">
+        <option value="all">Todas as linhas</option>
       </select>
     </div>
   </div>
@@ -871,12 +999,8 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
-          <select class="cf-sel" id="prodModelSel" onchange="refreshProd()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="prodLineSel" onchange="refreshProd()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -905,12 +1029,8 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
-          <select class="cf-sel" id="fpyModelSel" onchange="refreshFpy()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="fpyLineSel" onchange="refreshFpy()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -945,11 +1065,11 @@
           </div>
         </div>
         <div class="card-body">
-          <div class="legend">
-            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Linha 1 — PhoneX Pro</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Linha 2 — PhoneX Lite</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(251,191,36,.8)"></div>Linha 3 — PhoneX Ultra</div>
-            <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Linha 4 — PhoneX Mini</div>
+          <div class="legend" id="lineCompLegend">
+            <div class="leg"><div class="leg-sq" style="background:rgba(96,165,250,.8)"></div>Linha 1</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(52,211,153,.8)"></div>Linha 2</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(251,191,36,.8)"></div>Linha 3</div>
+            <div class="leg"><div class="leg-sq" style="background:rgba(167,139,250,.8)"></div>Linha 4</div>
           </div>
           <div class="ch-wrap" style="height:200px"><canvas id="lineCompChart"></canvas></div>
         </div>
@@ -970,12 +1090,8 @@
               <option value="B">Turno B</option>
               <option value="C">Turno C</option>
             </select>
-            <select class="cf-sel" id="oeeModelSel" onchange="refreshOee()">
-              <option value="all">Todos os modelos</option>
-              <option value="PhoneX Pro">PhoneX Pro</option>
-              <option value="PhoneX Lite">PhoneX Lite</option>
-              <option value="PhoneX Ultra">PhoneX Ultra</option>
-              <option value="PhoneX Mini">PhoneX Mini</option>
+            <select class="cf-sel" id="oeeLineSel" onchange="refreshOee()">
+              <option value="all">Todas as linhas</option>
             </select>
           </div>
         </div>
@@ -1016,12 +1132,8 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
-          <select class="cf-sel" id="hourModelSel" onchange="refreshHour()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="hourLineSel" onchange="refreshHour()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -1044,12 +1156,8 @@
             <option value="30d">30 dias</option>
             <option value="today">Hoje</option>
           </select>
-          <select class="cf-sel" id="shiftModelSel" onchange="refreshShiftEff()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="shiftLineSel" onchange="refreshShiftEff()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -1081,12 +1189,8 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
-          <select class="cf-sel" id="defCatModelSel" onchange="refreshDefCat()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="defCatLineSel" onchange="refreshDefCat()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -1110,12 +1214,8 @@
             <option value="B">Turno B</option>
             <option value="C">Turno C</option>
           </select>
-          <select class="cf-sel" id="defTrendModelSel" onchange="refreshDefTrend()">
-            <option value="all">Todos os modelos</option>
-            <option value="PhoneX Pro">PhoneX Pro</option>
-            <option value="PhoneX Lite">PhoneX Lite</option>
-            <option value="PhoneX Ultra">PhoneX Ultra</option>
-            <option value="PhoneX Mini">PhoneX Mini</option>
+          <select class="cf-sel" id="defTrendLineSel" onchange="refreshDefTrend()">
+            <option value="all">Todas as linhas</option>
           </select>
         </div>
       </div>
@@ -1181,7 +1281,15 @@
     <div class="chat-hist-panel" id="chatHistPanel">
       <div class="chat-hist-head">
         <span class="chat-hist-label">CONVERSAS</span>
-        <button class="chat-hist-close" onclick="hideHistory()">✕</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="chi-sel-btn" id="chatHistSelBtn" onclick="toggleSelectionMode()">SELECIONAR</button>
+          <button class="chat-hist-close" onclick="hideHistory()">✕</button>
+        </div>
+      </div>
+      <div class="chat-hist-sel-bar hidden" id="chatHistSelBar">
+        <span class="chat-hist-sel-count" id="chatHistSelCount">Nenhum selecionado</span>
+        <button class="chat-hist-sel-all" onclick="toggleSelectAll()">TODOS</button>
+        <button class="chat-hist-del-sel" id="chatHistDelSel" onclick="deleteSelectedSessions()" disabled>DELETAR</button>
       </div>
       <div class="chat-hist-list" id="chatHistList"></div>
     </div>
@@ -1311,11 +1419,29 @@ const errorBarPlugin = {
   }
 };
 
+// linhas disponíveis (carregadas do backend)
+let _lines = [];
+
+async function loadLineSelects() {
+  try {
+    _lines = await api('/lines');
+    const opts = _lines.map(l =>
+      `<option value="${l.id}">${l.name} — ${l.model}</option>`
+    ).join('');
+    const ids = ['kpiLineSel','prodLineSel','fpyLineSel','oeeLineSel',
+                 'hourLineSel','shiftLineSel','defCatLineSel','defTrendLineSel'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<option value="all">Todas as linhas</option>' + opts;
+    });
+  } catch(e) { console.error('loadLineSelects:', e); }
+}
+
 // SHARED HISTORICAL FETCH
-async function fetchHistorical(range, shift, model = 'all') {
+async function fetchHistorical(range, shift, line = 'all') {
   const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
-  const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
-  return api(`/production/historical?${rangeToDates(range)}${shiftParam}${modelParam}`);
+  const lineParam  = line  !== 'all' ? `&line=${line}`   : '';
+  return api(`/production/historical?${rangeToDates(range)}${shiftParam}${lineParam}`);
 }
 
 // ── PER-CHART REFRESH FUNCTIONS ────────────────────────
@@ -1324,9 +1450,9 @@ async function refreshKPIs() {
   try {
     const range = sel('kpiRangeSel');
     const shift = sel('kpiShiftSel');
-    const model = sel('kpiModelSel');
-    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
-    const k = await api(`/kpis?shift=${shift}&${rangeToDates(range)}${modelParam}`);
+    const line  = sel('kpiLineSel');
+    const lineParam = line !== 'all' ? `&line=${line}` : '';
+    const k = await api(`/kpis?shift=${shift}&${rangeToDates(range)}${lineParam}`);
     const pct = Math.round(k.total_produced / k.daily_target * 100);
     const rangeLabel = { '7d':'(7 dias)', '14d':'(14 dias)', '30d':'(30 dias)', 'today':'hoje' }[range];
     const kpis = [
@@ -1347,7 +1473,7 @@ async function refreshKPIs() {
 
 async function refreshProd() {
   try {
-    const h = await fetchHistorical(sel('prodRangeSel'), sel('prodShiftSel'), sel('prodModelSel'));
+    const h = await fetchHistorical(sel('prodRangeSel'), sel('prodShiftSel'), sel('prodLineSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('prodChart', {
@@ -1366,7 +1492,7 @@ async function refreshProd() {
 
 async function refreshFpy() {
   try {
-    const h = await fetchHistorical(sel('fpyRangeSel'), sel('fpyShiftSel'), sel('fpyModelSel'));
+    const h = await fetchHistorical(sel('fpyRangeSel'), sel('fpyShiftSel'), sel('fpyLineSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('fpyChart', {
@@ -1387,24 +1513,32 @@ async function refreshLineComp() {
     const h = await fetchHistorical(sel('lineCompRangeSel'), sel('lineCompShiftSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
+    const ll = (i) => _lines[i] ? `${_lines[i].name} — ${_lines[i].model}` : `Linha ${i+1}`;
     mkChart('lineCompChart', {
       type:'bar',
       data: { labels, datasets: [
-        { label:'Linha 1 — PhoneX Pro',   data: h.map(d=>d.line1), backgroundColor:'rgba(96,165,250,.75)', borderRadius:2 },
-        { label:'Linha 2 — PhoneX Lite',  data: h.map(d=>d.line2), backgroundColor:'rgba(52,211,153,.75)', borderRadius:2 },
-        { label:'Linha 3 — PhoneX Ultra', data: h.map(d=>d.line3), backgroundColor:'rgba(251,191,36,.75)', borderRadius:2 },
-        { label:'Linha 4 — PhoneX Mini',  data: h.map(d=>d.line4), backgroundColor:'rgba(167,139,250,.75)', borderRadius:2 },
+        { label: ll(0), data: h.map(d=>d.line1), backgroundColor:'rgba(96,165,250,.75)', borderRadius:2 },
+        { label: ll(1), data: h.map(d=>d.line2), backgroundColor:'rgba(52,211,153,.75)', borderRadius:2 },
+        { label: ll(2), data: h.map(d=>d.line3), backgroundColor:'rgba(251,191,36,.75)', borderRadius:2 },
+        { label: ll(3), data: h.map(d=>d.line4), backgroundColor:'rgba(167,139,250,.75)', borderRadius:2 },
       ]},
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:tip() },
         scales:{ x:scX({ticks:{...scX().ticks,maxRotation:rot(n)}}), y:scY() }
       }
     });
+    const colors = ['rgba(96,165,250,.8)','rgba(52,211,153,.8)','rgba(251,191,36,.8)','rgba(167,139,250,.8)'];
+    const leg = document.getElementById('lineCompLegend');
+    if (leg && _lines.length) {
+      leg.innerHTML = _lines.map((l,i) =>
+        `<div class="leg"><div class="leg-sq" style="background:${colors[i]}"></div>${l.name} — ${l.model}</div>`
+      ).join('');
+    }
   } catch(e) { console.error('lineCompChart:', e); }
 }
 
 async function refreshOee() {
   try {
-    const h = await fetchHistorical(sel('oeeRangeSel'), sel('oeeShiftSel'), sel('oeeModelSel'));
+    const h = await fetchHistorical(sel('oeeRangeSel'), sel('oeeShiftSel'), sel('oeeLineSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('oeeChart', {
@@ -1423,7 +1557,7 @@ async function refreshOee() {
 
 async function refreshShiftEff() {
   try {
-    const h = await fetchHistorical(sel('shiftRangeSel'), 'all', sel('shiftModelSel'));
+    const h = await fetchHistorical(sel('shiftRangeSel'), 'all', sel('shiftLineSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('shiftChart', {
@@ -1444,9 +1578,9 @@ async function refreshHour() {
   try {
     const shift = sel('hourShiftSel');
     const range = sel('hourRangeSel');
-    const model = sel('hourModelSel');
-    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
-    const hr = await api(`/production/hourly?shift=${shift}&${rangeToDates(range)}${modelParam}`);
+    const line  = sel('hourLineSel');
+    const lineParam = line !== 'all' ? `&line=${line}` : '';
+    const hr = await api(`/production/hourly?shift=${shift}&${rangeToDates(range)}${lineParam}`);
     const labels = hr.map(h => h.hour);
     if (charts['hourChart']) charts['hourChart'].destroy();
     charts['hourChart'] = new Chart(document.getElementById('hourChart'), {
@@ -1488,9 +1622,9 @@ async function refreshDefCat() {
     const range = sel('defCatRangeSel');
     const shift = sel('defCatShiftSel');
     const shiftParam = shift !== 'all' ? `&shift=${shift}` : '';
-    const model = sel('defCatModelSel');
-    const modelParam = model !== 'all' ? `&model=${encodeURIComponent(model)}` : '';
-    const dc = await api(`/defects?${rangeToDates(range)}${shiftParam}${modelParam}`);
+    const line  = sel('defCatLineSel');
+    const lineParam = line !== 'all' ? `&line=${line}` : '';
+    const dc = await api(`/defects?${rangeToDates(range)}${shiftParam}${lineParam}`);
     mkChart('defChart', {
       type:'bar',
       data:{ labels: dc.map(d=>d.category), datasets:[{
@@ -1511,7 +1645,7 @@ async function refreshDefCat() {
 
 async function refreshDefTrend() {
   try {
-    const h = await fetchHistorical(sel('defTrendRangeSel'), sel('defTrendShiftSel'), sel('defTrendModelSel'));
+    const h = await fetchHistorical(sel('defTrendRangeSel'), sel('defTrendShiftSel'), sel('defTrendLineSel'));
     const labels = h.map(d => d.label);
     const n = labels.length;
     mkChart('defTrendChart', {
@@ -1570,6 +1704,7 @@ async function refreshAll() {
     btn.classList.remove('spinning');
     return;
   }
+  await loadLineSelects();
   await Promise.all([
     refreshKPIs(), refreshProd(), refreshFpy(),
     refreshLineComp(), refreshOee(), refreshShiftEff(),
@@ -1782,6 +1917,8 @@ if (!_userId) { _userId = crypto.randomUUID(); localStorage.setItem('mfg_user_id
 let _sessionId = localStorage.getItem('mfg_session_id') || _userId;
 function _setSession(id) { _sessionId = id; localStorage.setItem('mfg_session_id', id); }
 let _msgId = 0;
+let _selMode = false;
+const _selectedIds = new Set();
 
 const _welcomeMsg = 'Olá! Como posso te ajudar hoje?';
 
@@ -1841,24 +1978,43 @@ async function loadSessions() {
       const item = document.createElement('div');
       item.className = 'chat-hist-item' + (s.session_id === _sessionId ? ' active' : '');
       item.innerHTML =
+        `<input type="checkbox" class="chi-checkbox" data-sid="${_escHtml(s.session_id)}">` +
         `<div class="chi-info">` +
           `<div class="chi-title">${_escHtml(s.title)}</div>` +
           `<div class="chi-meta">${s.message_count} mensagem${s.message_count !== 1 ? 's' : ''}</div>` +
         `</div>` +
         `<button class="chi-del" title="Deletar conversa">✕</button>`;
-      item.onclick = () => switchSession(s.session_id);
+      item.onclick = () => {
+        if (_selMode) {
+          const cb = item.querySelector('.chi-checkbox');
+          cb.checked = !cb.checked;
+          if (cb.checked) _selectedIds.add(s.session_id);
+          else _selectedIds.delete(s.session_id);
+          _updateSelCount();
+        } else {
+          switchSession(s.session_id);
+        }
+      };
+      item.querySelector('.chi-checkbox').onclick = (e) => e.stopPropagation();
+      item.querySelector('.chi-checkbox').onchange = (e) => {
+        if (e.target.checked) _selectedIds.add(s.session_id);
+        else _selectedIds.delete(s.session_id);
+        _updateSelCount();
+      };
       item.querySelector('.chi-del').onclick = (e) => {
         e.stopPropagation();
         deleteSession(s.session_id, item);
       };
       list.appendChild(item);
     }
+    if (_selMode) list.classList.add('sel-mode');
   } catch (e) {
     list.innerHTML = '<div class="chat-hist-empty">Erro ao carregar histórico.</div>';
   }
 }
 
 function showHistory() {
+  if (_selMode) toggleSelectionMode();
   loadSessions();
   document.getElementById('chatHistPanel').classList.add('open');
 }
@@ -1887,6 +2043,67 @@ async function deleteSession(sessionId, itemEl) {
   } catch (e) {
     alert('Erro ao deletar conversa.');
   }
+}
+
+function toggleSelectionMode() {
+  _selMode = !_selMode;
+  _selectedIds.clear();
+  const bar = document.getElementById('chatHistSelBar');
+  const btn = document.getElementById('chatHistSelBtn');
+  const list = document.getElementById('chatHistList');
+  if (_selMode) {
+    bar.classList.remove('hidden');
+    btn.textContent = 'CANCELAR';
+    btn.classList.add('active');
+    list.classList.add('sel-mode');
+  } else {
+    bar.classList.add('hidden');
+    btn.textContent = 'SELECIONAR';
+    btn.classList.remove('active');
+    list.classList.remove('sel-mode');
+    list.querySelectorAll('.chi-checkbox').forEach(cb => cb.checked = false);
+  }
+  _updateSelCount();
+}
+
+function _updateSelCount() {
+  const n = _selectedIds.size;
+  document.getElementById('chatHistSelCount').textContent =
+    n === 0 ? 'Nenhum selecionado' : `${n} selecionado${n !== 1 ? 's' : ''}`;
+  document.getElementById('chatHistDelSel').disabled = n === 0;
+}
+
+function toggleSelectAll() {
+  const checkboxes = [...document.querySelectorAll('#chatHistList .chi-checkbox')];
+  const allChecked = checkboxes.length > 0 && checkboxes.every(cb => cb.checked);
+  checkboxes.forEach(cb => {
+    cb.checked = !allChecked;
+    if (!allChecked) _selectedIds.add(cb.dataset.sid);
+    else _selectedIds.delete(cb.dataset.sid);
+  });
+  _updateSelCount();
+}
+
+async function deleteSelectedSessions() {
+  const count = _selectedIds.size;
+  if (!count) return;
+  if (!confirm(`Deletar ${count} conversa${count !== 1 ? 's' : ''}? Esta ação não pode ser desfeita.`)) return;
+  const delBtn = document.getElementById('chatHistDelSel');
+  delBtn.disabled = true;
+  delBtn.textContent = 'DELETANDO...';
+  let deletedActive = false;
+  for (const sessionId of [..._selectedIds]) {
+    try {
+      const res = await fetch(`${API_BASE}/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+      if (res.ok) {
+        document.querySelector(`.chi-checkbox[data-sid="${sessionId}"]`)?.closest('.chat-hist-item')?.remove();
+        _selectedIds.delete(sessionId);
+        if (sessionId === _sessionId) deletedActive = true;
+      }
+    } catch {}
+  }
+  toggleSelectionMode();
+  if (deletedActive) newChat();
 }
 
 function _addMsg(role, html) {
@@ -2487,10 +2704,18 @@ function chatKeydown(e) {
     const sendBtn = document.getElementById('chatSendBtn');
     const micBtn  = document.getElementById('chatMicBtn');
     sendBtn.disabled = true;
+    sendBtn.classList.add('loading');
+    sendBtn.textContent = '';
     micBtn.disabled  = true;
 
     const form = new FormData();
     form.append('audio', _blob, 'recording.webm');
+
+    const _restoreSendBtn = () => {
+      sendBtn.disabled = false;
+      sendBtn.classList.remove('loading');
+      sendBtn.textContent = '↑';
+    };
 
     let transcript;
     try {
@@ -2500,13 +2725,13 @@ function chatKeydown(e) {
       transcript = data.transcript;
     } catch (e) {
       _addMsg('error', 'Falha ao transcrever: ' + e.message);
-      sendBtn.disabled = false;
+      _restoreSendBtn();
       micBtn.disabled  = false;
       return;
     }
 
     discardAudio();
-    sendBtn.disabled = false;
+    _restoreSendBtn();
     micBtn.disabled  = false;
 
     const input = document.getElementById('chatInput');
@@ -2777,62 +3002,93 @@ function switchTab(name) {
                 <i class="fa-solid fa-diagram-project text-indigo-400"></i> Grafo Multi-Agente (LangGraph)
             </h3>
             <p class="text-slate-400 text-sm mb-6">A espinha dorsal é um grafo de estados (StateGraph) isolado em dois níveis de decisão.</p>
-            <div class="bg-[#0B0F19] p-6 rounded-lg overflow-auto border border-slate-900 mermaid-wrap">
+            <div class="bg-[#0B0F19] p-6 rounded-lg overflow-auto border border-slate-900 mermaid-wrap relative cursor-pointer group" id="mermaid-graph-wrap" onclick="_openMermaidModal()" title="Clique para ampliar">
+                <div class="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-600 group-hover:text-indigo-400 transition-colors pointer-events-none select-none z-10">
+                    <i class="fa-solid fa-expand-arrows-alt"></i><span>ampliar</span>
+                </div>
                 <div class="mermaid">
 graph TD
     User([Usuário])
 
     User --> Orch
 
-    subgraph Orch["Orquestrador  ⟨guardian node⟩"]
-        OT["get_current_datetime · calcular_periodo · rag<br/>consultar_analista · gerar_pdf · gerar_excel<br/>gerenciar_agenda · set_task_instructions<br/>get_task_code · test_task_code · save_task_code"]
+    subgraph Orch[Orquestrador]
+        OT["⚡ LLM decide qual tool chamar<br/>────────────────────────────<br/>data e hora · calcular período · buscar contexto<br/>delegar análise · exportar PDF · exportar Excel<br/>gerenciar agenda · ver código de tarefa<br/>criar tarefa agendada · editar tarefa agendada"]
     end
 
     Orch -->|"resposta em texto<br/>via SSE / chat"| User
-    Orch -->|"delega análise<br/>(para_agendamento flag)"| ANA
-    Orch -->|"delega agenda<br/>(criar / listar / deletar / pausar)"| SCH
-    Orch -->|"resposta direta<br/>(sem agendamento)"| ACT
-    Orch -->|"lê / escreve direto<br/>(get/save task_code)"| DB
-
+    Orch -->|"delega análise"| ANA
+    ANA -->|"texto · gráficos · PDF · Excel"| Orch
+    Orch -->|"listar / pausar / deletar"| SCH
     subgraph ANA[Sub-Agente Analista]
-        AT["read_skill · chamar_api<br/>executar_sql · analisar_dataframe<br/>gerar_pdf · gerar_excel"]
+        AT["⚡ LLM decide qual tool chamar<br/>────────────────────────────<br/>ler instruções da skill · buscar dados via API<br/>consultar SQL · analisar dados<br/>exportar PDF · exportar Excel<br/>coleta contexto estruturado para agendamento<br/>(skill · endpoint · colunas · amostra · tipo de saída)"]
+    end
+
+    subgraph SG["SchedulingGraph  ⟨StateGraph determinístico⟩"]
+        SG1["⚡ criar tarefa<br/>(infere nome, frequência e horário via LLM<br/>registra no banco)"] --> SG2["consultar dados<br/>(aciona o Analista · coleta dados reais da API)"]
+        SG2 --> SG_G["⚡ gerar código<br/>(LLM escreve o script da tarefa<br/>com base nos dados reais)"]
+        SG_G --> SG3["testar código<br/>(executa em ambiente isolado)"]
+        SG_E["⚡ editar código<br/>(LLM lê o script atual<br/>e aplica a modificação)"] --> SG3
+        SG3 -->|"erro · até 3 tentativas"| SG4["⚡ corrigir código<br/>(LLM corrige com base no erro real<br/>remove imports bloqueados)"]
+        SG4 --> SG3
+        SG3 -->|"ok"| SG5["salvar código<br/>(versiona e persiste no banco)"]
+        SG5 --> SG6["retornar resultado<br/>(devolve confirmação ao Orquestrador)"]
     end
 
     subgraph SCH[Sub-Agente Scheduling]
-        ST["schedule_task · update_scheduled_task<br/>delete_scheduled_task · toggle_pause_task<br/>list_scheduled_tasks · set_task_instructions<br/>get_task_instructions · get_task_code<br/>test_task_code · save_task_code<br/>get_task_code_versions · restore_task_code_version"]
+        ST["⚡ LLM decide qual tool chamar<br/>────────────────────────────<br/>criar tarefa · editar tarefa<br/>excluir tarefa · pausar / retomar<br/>listar tarefas · definir instruções · ver instruções<br/>histórico de versões do código · restaurar versão"]
     end
 
-    ANA -->|"resultado"| Orch
-    ANA & SCH -->|lê / escreve| DB[("mfg.db")]
+    OT -->|"criar tarefa agendada"| SG1
+    OT -->|"editar tarefa agendada"| SG_E
+    SG2 -->|"coleta dados para o script"| AT
+    AT -->|"endpoint · colunas · amostra de dados"| SG2
+    SG5 -->|"persiste script versionado"| DB[("mfg.db<br/>SQLite · persistência")]
+    SCH -->|lê / escreve| DB
+    SG6 -->|confirmação| OT
 
-    DB -->|"active · next_run ≤ now"| DAEMON
+    DB -->|"tarefa ativa com execução pendente"| DAEMON
 
-    subgraph DAEMON["Daemon · verifica a cada 120s"]
-        RUNNER["runner.py — exec() sandbox<br/>pd · np · plt · ctx<br/>(sem import dentro de run)"]
+    subgraph DAEMON["Daemon · verifica a cada 60s"]
+        RUNNER["executa tarefas agendadas<br/>em ambiente isolado e seguro"]
     end
 
-    DAEMON -->|"UPDATE last_run / next_run<br/>INSERT task_runs"| DB
-    RUNNER --> ACT
+    DAEMON -->|"registra execução e agenda próxima"| DB
+    RUNNER -->|"gráficos · PDFs · Excel<br/>alertas por e-mail<br/>notificações via ctx.notify()<br/>qualquer ctx.api()"| User
 
-    ACT["Ações possíveis<br/>──────────────<br/>📊 gráficos / PDFs / Excel<br/>📧 alertas por e-mail<br/>🏭 comandos em máquinas<br/>🔔 notificações externas<br/>… qualquer ctx.api()"]
+    subgraph LEG["Legenda"]
+        L1["⚡ nó chama o LLM<br/>(borda amarela)"] ~~~ L2["nó determinístico<br/>(borda verde)"]
+        L3["⚡ sub-agente ReAct<br/>(fundo lilás · borda amarela)"] ~~~ L4["grafo de fluxo fixo<br/>(fundo verde · sequência predefinida)"]
+    end
 
-    ACT -->|"artefatos via SSE<br/>e-mail / notificações"| User
+    classDef legend fill:#111827,stroke:#4ade80,stroke-width:1.5px,color:#9CA3AF,font-style:italic;
+    classDef legendllm fill:#111827,stroke:#facc15,stroke-width:2px,color:#9CA3AF,font-style:italic;
+    classDef legendagent fill:#312E81,stroke:#facc15,stroke-width:2px,color:#c4b5fd,font-style:italic;
+    classDef legendsg fill:#1e3a1e,stroke:#4ade80,stroke-width:1.5px,color:#bbf7d0,font-style:italic;
+    class L2 legend;
+    class L1 legendllm;
+    class L3 legendagent;
+    class L4 legendsg;
 
     classDef default fill:#1E293B,stroke:#475569,stroke-width:1px,color:#F8FAFC;
     classDef agent fill:#312E81,stroke:#6366F1,stroke-width:1px,color:#E0E7FF;
+    classDef agentllm fill:#312E81,stroke:#facc15,stroke-width:2px,color:#E0E7FF;
+    classDef sg fill:#1e3a1e,stroke:#4ade80,stroke-width:1.5px,color:#bbf7d0;
+    classDef sgllm fill:#1e3a1e,stroke:#facc15,stroke-width:2px,color:#bbf7d0;
     classDef storage fill:#0F2027,stroke:#0EA5E9,stroke-width:1px,color:#7DD3FC;
-    classDef daemon fill:#1a2e1a,stroke:#22C55E,stroke-width:1px,color:#86EFAC;
-    classDef output fill:#1a1a2e,stroke:#a78bfa,stroke-width:1px,color:#c4b5fd;
+    classDef daemon fill:#0c1a2e,stroke:#38BDF8,stroke-width:1.5px,color:#7DD3FC;
     classDef user fill:#1a2535,stroke:#38BDF8,stroke-width:2px,color:#E0F2FE,font-weight:bold;
     class Orch,ANA,SCH agent;
+    class OT,AT,ST agentllm;
+    class SG,SG2,SG3,SG5,SG6 sg;
+    class SG1,SG_G,SG_E,SG4 sgllm;
     class DB storage;
     class DAEMON daemon;
-    class ACT output;
     class User user;
                 </div>
             </div>
             <p class="text-xs text-slate-500 mt-4 leading-relaxed">
-                O orquestrador possui um <strong>guardian node</strong> que força a sequência <code>get_task_code → save_task_code</code> (nunca deixa edição incompleta). O sub-agente <strong>analista</strong> acessa a API REST, executa SQL e gera PDF/Excel; quando chamado com <code>para_agendamento=True</code>, devolve um bloco <code>task_context</code> com endpoint, colunas e código pandas reais. O sub-agente <strong>scheduling</strong> gerencia tarefas e versiona o <code>task_code</code> com suporte a rollback. O daemon verifica tarefas a cada 120s: se há <code>task_code</code>, executa via <code>runner.py</code> num sandbox Python restrito (sem <code>import</code> dentro de <code>run()</code>); sem <code>task_code</code>, cai em modo LLM. As ações possíveis vão muito além de relatórios — qualquer coisa acessível via <code>ctx.api()</code>: gráficos, PDFs, alertas por e-mail, comandos em máquinas conectadas, notificações externas, etc.
+                O <strong>SchedulingGraph</strong> é um StateGraph determinístico com responsabilidade exclusiva de criar e manter o <code>task_code</code>. Para criação, o nó <strong>consultar_dados</strong> chama o sub-agente analista no modo <code>PARA_AGENDAMENTO</code>, que retorna apenas contexto estruturado (endpoint exato, colunas observadas, amostra de dados) — nunca o código em si. O nó <strong>gerar_codigo</strong> usa esse contexto como base para um LLM gerar o <code>def run(from_date, to_date, ctx)</code> determinístico. Para edições, o nó <strong>editar_codigo</strong> lê o código atual e aplica a modificação mínima solicitada, sem acionar o analista. Em ambos os fluxos, o código passa por <strong>testar_codigo</strong> (sandbox real), com até 3 ciclos de <strong>corrigir_codigo</strong> se houver erro. O sub-agente <strong>analista</strong> continua responsável por análises ad-hoc (PDF, Excel, gráficos); o sub-agente <strong>scheduling</strong> cuida das operações CRUD e versionamento do <code>task_code</code> com rollback. O daemon verifica tarefas a cada 60s e executa via <code>runner.py</code> em sandbox Python restrito (sem <code>import</code> dentro de <code>run()</code>). As ações possíveis vão muito além de relatórios — qualquer coisa acessível via <code>ctx.api()</code>: gráficos, PDFs, alertas por e-mail, notificações externas, etc.
             </p>
         </section>
 
@@ -3144,7 +3400,7 @@ graph TD
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
                 <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
                     <div class="text-orange-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-comment-dots"></i> 1. Disparo pelo chat</div>
-                    <p class="text-xs text-slate-400 leading-relaxed">O agente cria uma tarefa com <code class="text-orange-300">frequency="on_demand"</code> e <code>next_run</code> imediato. O daemon a detecta no próximo ciclo (≤ 120s) e inicia a execução.</p>
+                    <p class="text-xs text-slate-400 leading-relaxed">O agente cria uma tarefa com <code class="text-orange-300">frequency="on_demand"</code> e <code>next_run</code> imediato. O daemon a detecta no próximo ciclo (≤ 60s) e inicia a execução.</p>
                 </div>
                 <div class="bg-[#0B0F19] border border-slate-800 rounded-xl p-4">
                     <div class="text-orange-400 font-semibold text-sm mb-2 flex items-center gap-2"><i class="fa-solid fa-gears"></i> 2. Execução isolada</div>
@@ -3298,13 +3554,17 @@ function _runsSection(runs) {
   </div>`;
 }
 
-function renderTaskCard(t) {
+function renderTaskCard(t, isNew) {
   const desc = t.description || '';
   const retryInfo = t.retry_count > 0
     ? `<span style="font-size:10px;color:#fb923c;font-family:'JetBrains Mono',monospace;"> · tentativa ${t.retry_count}/${t.max_retries}</span>`
     : '';
+  const newStyle = isNew ? 'border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.18);' : '';
+  const newClass = isNew ? 'task-card-new' : '';
+  const newTag = isNew ? `<span class="task-new-badge" style="position:absolute;top:-8px;left:12px;background:#6366f1;color:#fff;font-size:9px;font-weight:700;border-radius:99px;padding:1px 8px;letter-spacing:.06em;">NOVA</span>` : '';
   return `
-  <div style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:16px;position:relative;">
+  <div class="${newClass}" style="background:#141c27;border:1px solid #1e293b;border-radius:10px;padding:16px;position:relative;${newStyle}">
+  ${newTag}
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6366f1;font-weight:700;">[${t.id}]</span>
@@ -3328,6 +3588,7 @@ function renderTaskCard(t) {
           onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">
           ${t.status === 'paused' ? '▶' : '⏸'}
         </button>` : ''}
+        <button onclick="openTaskCode('${t.id}')" title="Ver código da tarefa" style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;font-family:'JetBrains Mono',monospace;transition:all .15s;" onmouseover="this.style.borderColor='#6366f1';this.style.color='#6366f1'" onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">&lt;/&gt;</button>
         <button onclick="deleteTask('${t.id}')" title="Remover tarefa" style="background:none;border:1px solid #3f3f46;border-radius:6px;color:#71717a;padding:3px 7px;font-size:12px;cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='#f87171';this.style.color='#f87171'" onmouseout="this.style.borderColor='#3f3f46';this.style.color='#71717a'">✕</button>
       </div>
     </div>
@@ -3350,27 +3611,50 @@ function renderTaskCard(t) {
   </div>`;
 }
 
+function _renderAgendaTasks(tasks) {
+  const list = document.getElementById('agendaList');
+  const active = tasks.filter(t => t.status !== 'cancelled');
+  const seenIds = JSON.parse(localStorage.getItem('agendaSeenIds') || '[]');
+  if (active.length === 0) {
+    list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhuma tarefa agendada.<br><br>Use o chat para criar um relatório agendado ou recorrente e recebê-lo por email.</div>';
+  } else {
+    list.innerHTML = active.map(t => renderTaskCard(t, !seenIds.includes(String(t.id)))).join('');
+  }
+}
+
 async function loadAgenda() {
   const list = document.getElementById('agendaList');
   list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
   try {
     const res = await fetch(`/tasks?user_id=${_userId}`);
     const tasks = await res.json();
-    const active = tasks.filter(t => t.status !== 'cancelled');
-    // badge no botão
-    const badge = document.getElementById('agendaBadge');
-    const activeCount = tasks.filter(t => t.status === 'active').length;
-    if (activeCount > 0) { badge.textContent = activeCount; badge.style.display = 'inline'; }
-    else { badge.style.display = 'none'; }
-    // renderiza
-    if (active.length === 0) {
-      list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhuma tarefa agendada.<br><br>Use o chat para criar um relatório agendado ou recorrente e recebê-lo por email.</div>';
-    } else {
-      list.innerHTML = active.map(renderTaskCard).join('');
-    }
+    _renderAgendaTasks(tasks);
   } catch(e) {
     list.innerHTML = '<div style="text-align:center;color:#f87171;padding:40px 0;font-size:13px;">Erro ao carregar tarefas.</div>';
   }
+}
+
+const _taskPolls = {};
+
+async function pollTaskUntilDone(id) {
+  if (_taskPolls[id]) return;
+  const tick = async () => {
+    try {
+      const res = await fetch(`/tasks?user_id=${_userId}`);
+      const tasks = await res.json();
+      _renderAgendaTasks(tasks);
+      const task = tasks.find(t => String(t.id) === String(id));
+      const stillRunning = task && (task.status === 'running' || (task.runs || []).some(r => r.status === 'running'));
+      if (stillRunning) {
+        _taskPolls[id] = setTimeout(tick, 3000);
+      } else {
+        delete _taskPolls[id];
+      }
+    } catch {
+      delete _taskPolls[id];
+    }
+  };
+  _taskPolls[id] = setTimeout(tick, 3000);
 }
 
 async function runTaskNow(id, btn) {
@@ -3380,11 +3664,11 @@ async function runTaskNow(id, btn) {
   try {
     const res = await fetch(`/tasks/${id}/run-now?user_id=${_userId}`, { method: 'POST' });
     const d = await res.json();
-    if (!res.ok) { alert(d.message); }
+    if (!res.ok) { alert(d.message); btn.textContent = '▶'; btn.style.color = '#4ade80'; btn.disabled = false; }
     else {
       btn.textContent = '✓';
       btn.style.borderColor = '#4ade80';
-      setTimeout(() => { btn.textContent = '▶'; btn.style.color = '#4ade80'; btn.style.borderColor = '#166534'; btn.disabled = false; loadAgenda(); }, 2000);
+      setTimeout(() => { loadAgenda(); pollTaskUntilDone(id); }, 1500);
     }
   } catch (e) { btn.textContent = '▶'; btn.disabled = false; }
 }
@@ -3405,12 +3689,102 @@ async function togglePauseTask(id, btn) {
   } catch { btn.disabled = false; }
 }
 
+// ── Task Code Viewer ────────────────────────────────────────────────────────
+
+let _taskCodeCurrent = '';
+
+function _escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function openTaskCode(id) {
+  const overlay = document.getElementById('taskCodeOverlay');
+  const modal   = document.getElementById('taskCodeModal');
+  const body    = document.getElementById('taskCodeBody');
+  const vers    = document.getElementById('taskCodeVersions');
+  const title   = document.getElementById('taskCodeModalTitle');
+
+  body.innerHTML = '<div style="padding:32px;text-align:center;color:#475569;font-size:13px;">Carregando…</div>';
+  vers.innerHTML = '';
+  overlay.style.display = 'block';
+  modal.style.display   = 'flex';
+
+  try {
+    const res  = await fetch(`/tasks/${id}/code?user_id=${_userId}`);
+    const data = await res.json();
+    if (!res.ok) { body.innerHTML = `<div style="padding:20px;color:#f87171;font-size:12px;">${_escHtml(data.message)}</div>`; return; }
+
+    title.textContent = `[${id}] ${data.name || ''}`;
+
+    if (data.task_code) {
+      _taskCodeCurrent = data.task_code;
+      body.innerHTML = `
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;padding:10px 18px 6px;">CÓDIGO ATUAL</div>
+        <pre style="margin:0;padding:0 18px 18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#e2e8f0;line-height:1.65;white-space:pre;overflow:auto;background:#080d15;">${_escHtml(data.task_code)}</pre>`;
+    } else if (data.instructions) {
+      _taskCodeCurrent = data.instructions;
+      body.innerHTML = `
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;padding:10px 18px 6px;">INSTRUÇÕES (modo LLM)</div>
+        <pre style="margin:0;padding:0 18px 18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#94a3b8;line-height:1.65;white-space:pre-wrap;word-break:break-word;background:#080d15;">${_escHtml(data.instructions)}</pre>`;
+    } else {
+      _taskCodeCurrent = '';
+      body.innerHTML = '<div style="padding:32px;text-align:center;color:#475569;font-size:12px;">Nenhum código definido para esta tarefa.</div>';
+    }
+
+    if (data.versions && data.versions.length > 0) {
+      const rows = data.versions.map(v => `
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:#6366f1;">v${v.version}</span>
+            <span style="font-size:10px;color:#475569;">${(v.created_at||'').slice(0,16).replace('T',' ')}</span>
+          </div>
+          <pre style="margin:0;padding:8px 12px;font-size:11px;font-family:'JetBrains Mono',monospace;color:#64748b;line-height:1.55;white-space:pre;overflow:auto;background:#0a1020;border:1px solid #1e293b;border-radius:6px;max-height:140px;">${_escHtml(v.code)}</pre>
+        </div>`).join('');
+      vers.innerHTML = `
+        <div style="font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;margin-bottom:10px;">VERSÕES ANTERIORES (${data.versions.length})</div>
+        <div style="max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1e293b transparent;">${rows}</div>`;
+    }
+  } catch(e) {
+    body.innerHTML = '<div style="padding:20px;color:#f87171;font-size:12px;">Erro ao carregar código.</div>';
+  }
+}
+
+function closeTaskCode() {
+  document.getElementById('taskCodeOverlay').style.display = 'none';
+  document.getElementById('taskCodeModal').style.display   = 'none';
+}
+
+async function copyTaskCode() {
+  if (!_taskCodeCurrent) return;
+  await navigator.clipboard.writeText(_taskCodeCurrent);
+  const btn = document.getElementById('taskCodeCopyBtn');
+  btn.textContent = 'Copiado ✓';
+  setTimeout(() => btn.textContent = 'Copiar', 2000);
+}
+
 function openAgenda() {
   document.getElementById('agendaOverlay').style.display = 'block';
   const panel = document.getElementById('agendaPanel');
   panel.style.display = 'flex';
   requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
-  loadAgenda();
+  loadAgenda().then(() => {
+    setTimeout(() => {
+      fetch(`/tasks?user_id=${_userId}`).then(r => r.json()).then(tasks => {
+        const activeTasks = tasks.filter(t => t.status === 'active');
+        const allIds = activeTasks.map(t => String(t.id));
+        localStorage.setItem('agendaSeenIds', JSON.stringify(allIds));
+        document.getElementById('agendaBadge').style.display = 'none';
+        const countEl = document.getElementById('agendaCount');
+        if (countEl) countEl.textContent = activeTasks.length > 0 ? ` (${activeTasks.length})` : '';
+        document.querySelectorAll('.task-card-new').forEach(el => {
+          el.classList.remove('task-card-new');
+          el.style.borderColor = '#1e293b';
+          el.style.boxShadow = 'none';
+        });
+        document.querySelectorAll('.task-new-badge').forEach(el => el.remove());
+      }).catch(() => {});
+    }, 1500);
+  });
 }
 
 function closeAgenda() {
@@ -3420,6 +3794,249 @@ function closeAgenda() {
     document.getElementById('agendaOverlay').style.display = 'none';
     panel.style.display = 'none';
   }, 260);
+}
+
+// ── Error Audit panel ───────────────────────────────────────────────────────
+
+let _auditData = [];
+const _auditCodeMap = {};
+
+function openAudit() {
+  document.getElementById('auditOverlay').style.display = 'block';
+  const panel = document.getElementById('auditPanel');
+  panel.style.display = 'flex';
+  requestAnimationFrame(() => panel.style.transform = 'translateX(0)');
+  if (_auditData.length === 0) loadAudit();
+}
+
+function closeAudit() {
+  const panel = document.getElementById('auditPanel');
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(() => {
+    document.getElementById('auditOverlay').style.display = 'none';
+    panel.style.display = 'none';
+  }, 260);
+}
+
+async function loadAudit() {
+  const list = document.getElementById('auditList');
+  list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Carregando...</div>';
+  try {
+    const res = await fetch(API_BASE + '/tasks/code-audit/summary');
+    _auditData = await res.json();
+    _auditData.forEach(r => { if (r.id) _auditCodeMap[r.id] = r; });
+    renderAudit();
+  } catch(e) {
+    list.innerHTML = '<div style="text-align:center;color:#f87171;padding:40px 0;font-size:13px;">Erro ao carregar: ' + e.message + '</div>';
+  }
+}
+
+function renderAudit() {
+  const filter = (document.getElementById('auditFilter').value || '').toLowerCase();
+  const sort   = document.getElementById('auditSort').value;
+
+  let rows = _auditData.filter(r =>
+    !filter ||
+    (r.task_id || '').toLowerCase().includes(filter) ||
+    (r.error   || '').toLowerCase().includes(filter)
+  );
+
+  if (sort === 'task') rows.sort((a,b) => (a.task_id||'').localeCompare(b.task_id||''));
+
+  // ── Resumo de padrões ──
+  const patterns = {};
+  _auditData.forEach(r => {
+    let p = 'outro';
+    const e = (r.error || '').toLowerCase();
+    if (e.includes('import de') || e.includes('bloqueados no sandbox')) p = 'import bloqueado';
+    else if (e.includes('ha=') || e.includes('tick_params'))            p = "tick_params ha=";
+    else if (e.includes('syntaxerror'))                                 p = 'SyntaxError';
+    else if (e.includes('nameerror'))                                   p = 'NameError';
+    else if (e.includes('attributeerror'))                              p = 'AttributeError';
+    else if (e.includes('keyerror'))                                    p = 'KeyError';
+    else if (e.includes('typeerror'))                                   p = 'TypeError';
+    patterns[p] = (patterns[p] || 0) + 1;
+  });
+  const colorMap = {
+    'import bloqueado': '#f87171', "tick_params ha=": '#fb923c',
+    'SyntaxError': '#fbbf24', 'NameError': '#a78bfa',
+    'AttributeError': '#60a5fa', 'KeyError': '#34d399',
+    'TypeError': '#fb923c', 'outro': '#475569'
+  };
+  const sumDiv = document.getElementById('auditSummary');
+  if (Object.keys(patterns).length === 0) {
+    sumDiv.innerHTML = '<span style="color:#475569;font-size:11px;">Sem erros registrados.</span>';
+  } else {
+    sumDiv.innerHTML = Object.entries(patterns)
+      .sort((a,b) => b[1]-a[1])
+      .map(([k,v]) => {
+        const c = colorMap[k] || '#475569';
+        return `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 9px;border-radius:99px;border:1px solid ${c}33;background:${c}11;color:${c};">${k} <b>${v}</b></span>`;
+      }).join('');
+  }
+
+  // Reset seleção ao re-renderizar
+  _auditSelected.clear();
+  _updateAuditToolbar();
+
+  // ── Lista de erros ──
+  const list = document.getElementById('auditList');
+  if (rows.length === 0) {
+    list.innerHTML = '<div style="text-align:center;color:#475569;padding:40px 0;font-size:13px;">Nenhum resultado.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r => {
+    const ts = r.created_at ? r.created_at.replace('T',' ').slice(0,19) : '—';
+    const errFull  = (r.error || '').replace(/❌\s*/,'');
+    const errShort = errFull.slice(0, 180);
+    const errLong  = errFull.length > 180;
+    const phaseColor = r.phase === 'create' ? '#38bdf8' : '#a78bfa';
+    const attemptColor = r.attempt >= 3 ? '#f87171' : r.attempt === 2 ? '#fb923c' : '#fbbf24';
+    const hasCode = r.code && r.code.trim().length > 0;
+    return `
+    <div id="acard-${r.id}" style="background:#141c27;border:1px solid #1e293b;border-radius:8px;padding:12px 14px;transition:border-color .15s;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <input type="checkbox" onchange="toggleAuditSelect(${r.id}, this)" style="accent-color:#6366f1;width:14px;height:14px;cursor:pointer;flex-shrink:0;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#f8fafc;">task ${r.task_id}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:1px 7px;border-radius:99px;border:1px solid ${phaseColor}44;color:${phaseColor};">${r.phase}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:1px 7px;border-radius:99px;border:1px solid ${attemptColor}44;color:${attemptColor};">tentativa ${r.attempt}</span>
+        <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:#334155;">${ts}</span>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#94a3b8;white-space:pre-wrap;word-break:break-all;line-height:1.5;">${errShort}${errLong ? '<span style="color:#475569;">…</span>' : ''}</div>
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+        ${errLong ? `<button onclick="openAuditError(${r.id})" style="background:none;border:1px solid #7f1d1d;border-radius:4px;color:#f87171;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;cursor:pointer;" onmouseover="this.style.borderColor='#f87171'" onmouseout="this.style.borderColor='#7f1d1d'">Ver erro completo</button>` : ''}
+        ${hasCode ? `<button onclick="openAuditCode(${r.id})" style="background:none;border:1px solid #1e293b;border-radius:4px;color:#6366f1;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;cursor:pointer;" onmouseover="this.style.borderColor='#6366f1'" onmouseout="this.style.borderColor='#1e293b'">⬡ Código com erro</button>` : ''}
+        ${hasCode ? `<button onclick="copyAuditCodeById(${r.id}, this)" style="background:none;border:1px solid #1e293b;border-radius:4px;color:#475569;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;cursor:pointer;" onmouseover="this.style.borderColor='#475569'" onmouseout="this.style.borderColor='#1e293b'">Copiar</button>` : ''}
+        <button onclick="deleteAuditEntry(${r.id}, this)" style="background:none;border:1px solid #1e293b;border-radius:4px;color:#475569;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;cursor:pointer;margin-left:auto;" onmouseover="this.style.color='#f87171';this.style.borderColor='#7f1d1d'" onmouseout="this.style.color='#475569';this.style.borderColor='#1e293b'" title="Apagar este registro">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let _auditSelected = new Set();
+
+function _updateAuditToolbar() {
+  const n = _auditSelected.size;
+  const toolbar = document.getElementById('auditToolbar');
+  const count   = document.getElementById('auditSelCount');
+  toolbar.style.display = n > 0 ? 'flex' : 'none';
+  count.textContent = `${n} selecionado${n !== 1 ? 's' : ''}`;
+}
+
+function toggleAuditSelect(id, checkbox) {
+  const card = document.getElementById('acard-' + id);
+  if (checkbox.checked) {
+    _auditSelected.add(id);
+    if (card) card.style.borderColor = '#6366f1';
+  } else {
+    _auditSelected.delete(id);
+    if (card) card.style.borderColor = '#1e293b';
+  }
+  _updateAuditToolbar();
+}
+
+function selectAllAudit() {
+  const visibleIds = _auditData
+    .filter(r => {
+      const filter = (document.getElementById('auditFilter').value || '').toLowerCase();
+      return !filter || (r.task_id||'').toLowerCase().includes(filter) || (r.error||'').toLowerCase().includes(filter);
+    })
+    .map(r => r.id);
+  visibleIds.forEach(id => {
+    _auditSelected.add(id);
+    const card = document.getElementById('acard-' + id);
+    if (card) {
+      card.style.borderColor = '#6366f1';
+      const cb = card.querySelector('input[type=checkbox]');
+      if (cb) cb.checked = true;
+    }
+  });
+  _updateAuditToolbar();
+}
+
+async function deleteSelectedAudit() {
+  if (_auditSelected.size === 0) return;
+  if (!confirm(`Apagar ${_auditSelected.size} registro(s) selecionado(s)?`)) return;
+  await Promise.all([..._auditSelected].map(id =>
+    fetch(API_BASE + '/tasks/code-audit/' + id, { method: 'DELETE' })
+  ));
+  _auditData = _auditData.filter(r => !_auditSelected.has(r.id));
+  _auditSelected.forEach(id => delete _auditCodeMap[id]);
+  _auditSelected.clear();
+  _updateAuditToolbar();
+  renderAudit();
+}
+
+async function deleteAuditEntry(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  await fetch(API_BASE + '/tasks/code-audit/' + id, { method: 'DELETE' });
+  _auditData = _auditData.filter(r => r.id !== id);
+  delete _auditCodeMap[id];
+  renderAudit();
+}
+
+async function clearAllAudit() {
+  if (!confirm('Apagar todos os registros do Error Audit?')) return;
+  await fetch(API_BASE + '/tasks/code-audit', { method: 'DELETE' });
+  _auditData = [];
+  for (const k in _auditCodeMap) delete _auditCodeMap[k];
+  renderAudit();
+}
+
+function openAuditError(id) {
+  const r = _auditCodeMap[id];
+  if (!r) return;
+  document.getElementById('auditCodeModalTitle').textContent = `task ${r.task_id} · ${r.phase} · tentativa ${r.attempt}`;
+  const pre = document.getElementById('auditCodeText');
+  pre.textContent = (r.error || '').replace(/❌\s*/, '');
+  pre.style.color = '#fca5a5';
+  document.getElementById('auditCodeCopyBtn').textContent = 'Copiar';
+  document.getElementById('auditCodeCopyBtn').onclick = () => {
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      document.getElementById('auditCodeCopyBtn').textContent = '✔ Copiado';
+      setTimeout(() => document.getElementById('auditCodeCopyBtn').textContent = 'Copiar', 1500);
+    });
+  };
+  document.getElementById('auditCodeOverlay').style.display = 'block';
+  document.getElementById('auditCodeModal').style.display = 'flex';
+}
+
+function openAuditCode(id) {
+  const r = _auditCodeMap[id];
+  if (!r) return;
+  document.getElementById('auditCodeModalTitle').textContent = `task ${r.task_id} · ${r.phase} · tentativa ${r.attempt} — código que gerou o erro`;
+  const pre = document.getElementById('auditCodeText');
+  pre.textContent = r.code || '';
+  pre.style.color = '#94a3b8';
+  document.getElementById('auditCodeCopyBtn').textContent = 'Copiar';
+  document.getElementById('auditCodeCopyBtn').onclick = copyAuditCode;
+  document.getElementById('auditCodeOverlay').style.display = 'block';
+  const modal = document.getElementById('auditCodeModal');
+  modal.style.display = 'flex';
+}
+
+function copyAuditCodeById(id, btn) {
+  const r = _auditCodeMap[id];
+  if (!r || !r.code) return;
+  navigator.clipboard.writeText(r.code).then(() => {
+    btn.textContent = '✔ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1500);
+  });
+}
+
+function closeAuditCode() {
+  document.getElementById('auditCodeOverlay').style.display = 'none';
+  document.getElementById('auditCodeModal').style.display = 'none';
+}
+
+function copyAuditCode() {
+  const text = document.getElementById('auditCodeText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('auditCodeCopyBtn');
+    btn.textContent = '✔ Copiado';
+    setTimeout(() => btn.textContent = 'Copiar', 1500);
+  });
 }
 
 // ── Artifacts panel ─────────────────────────────────────────────────────────
@@ -3486,7 +4103,29 @@ async function deleteSelectedArtifacts() {
   loadArtifacts();
 }
 
-const ARTIFACT_ICONS = { pdf: '📄', chart: '📈', excel: '📊' };
+const ARTIFACT_ICONS = {
+  pdf: `<svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="20" height="24" rx="3" fill="#1e0a0a" stroke="#ef4444" stroke-width="1.2"/>
+    <path d="M13 1v5a1 1 0 001 1h5" stroke="#ef4444" stroke-width="1.2" stroke-linecap="round"/>
+    <text x="11" y="19" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="6.5" font-weight="700" fill="#ef4444">PDF</text>
+  </svg>`,
+  excel: `<svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="20" height="24" rx="3" fill="#0a1e0f" stroke="#4ade80" stroke-width="1.2"/>
+    <path d="M13 1v5a1 1 0 001 1h5" stroke="#4ade80" stroke-width="1.2" stroke-linecap="round"/>
+    <line x1="5" y1="11" x2="17" y2="11" stroke="#4ade80" stroke-width=".8" opacity=".5"/>
+    <line x1="5" y1="14.5" x2="17" y2="14.5" stroke="#4ade80" stroke-width=".8" opacity=".5"/>
+    <line x1="5" y1="18" x2="17" y2="18" stroke="#4ade80" stroke-width=".8" opacity=".5"/>
+    <line x1="11" y1="9" x2="11" y2="21" stroke="#4ade80" stroke-width=".8" opacity=".5"/>
+    <text x="11" y="19.5" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="5.5" font-weight="700" fill="#4ade80">XLS</text>
+  </svg>`,
+  chart: `<svg width="22" height="26" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="20" height="24" rx="3" fill="#0a0f1e" stroke="#38bdf8" stroke-width="1.2"/>
+    <path d="M13 1v5a1 1 0 001 1h5" stroke="#38bdf8" stroke-width="1.2" stroke-linecap="round"/>
+    <rect x="5" y="17" width="3" height="5" rx=".5" fill="#38bdf8" opacity=".9"/>
+    <rect x="9.5" y="13" width="3" height="9" rx=".5" fill="#818cf8" opacity=".9"/>
+    <rect x="14" y="15" width="3" height="7" rx=".5" fill="#38bdf8" opacity=".7"/>
+  </svg>`,
+};
 const ARTIFACT_LABELS = { pdf: 'PDF', chart: 'Gráfico', excel: 'Excel' };
 
 function _originBadge(a) {
@@ -3518,7 +4157,7 @@ function renderArtifact(a) {
       <div style="display:flex;align-items:center;gap:10px;min-width:0;">
         <input type="checkbox" ${checked} onchange="toggleArtifactSelect('${key}', this)"
           style="width:15px;height:15px;accent-color:#6366f1;flex-shrink:0;cursor:pointer;">
-        <span style="font-size:18px;">${ARTIFACT_ICONS[a.type]}</span>
+        <span style="display:flex;align-items:center;flex-shrink:0;">${ARTIFACT_ICONS[a.type]}</span>
         <div style="min-width:0;">
           <div style="font-size:12px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
           <div style="font-size:10px;color:#475569;margin-top:1px;">${dt}</div>
@@ -3597,12 +4236,9 @@ function closeArtifacts() {
 // carrega histórico do chat e badges ao iniciar
 document.addEventListener('DOMContentLoaded', () => {
   loadChatHistory();
+  loadLineSelects();
 
-  fetch(`/tasks?user_id=${_userId}`).then(r => r.json()).then(tasks => {
-    const n = tasks.filter(t => t.status === 'active').length;
-    const badge = document.getElementById('agendaBadge');
-    if (n > 0) { badge.textContent = n; badge.style.display = 'inline'; }
-  }).catch(() => {});
+  pollAgenda();
   pollAlerts();
 });
 
@@ -3724,6 +4360,25 @@ async function updateAlertsBadge() {
 function pollAlerts() {
   updateAlertsBadge();
   setInterval(updateAlertsBadge, 15000);
+}
+
+async function updateAgendaBadge() {
+  try {
+    const tasks = await fetch(`/tasks?user_id=${_userId}`).then(r => r.json());
+    const active = tasks.filter(t => t.status === 'active');
+    const seenIds = JSON.parse(localStorage.getItem('agendaSeenIds') || '[]');
+    const newCount = active.filter(t => !seenIds.includes(String(t.id))).length;
+    const badge = document.getElementById('agendaBadge');
+    if (newCount > 0) { badge.style.display = 'inline'; }
+    else { badge.style.display = 'none'; }
+    const countEl = document.getElementById('agendaCount');
+    if (countEl) countEl.textContent = active.length > 0 ? ` (${active.length})` : '';
+  } catch (e) {}
+}
+
+function pollAgenda() {
+  updateAgendaBadge();
+  setInterval(updateAgendaBadge, 15000);
 }
 
 // ── Demo controls ─────────────────────────────────────────────────────────────
@@ -3898,6 +4553,7 @@ document.addEventListener('DOMContentLoaded', _loadDemoState);
           <div class="ex-card-subtitle">Execução autônoma mesmo com a plataforma fechada · resultados nos artefatos · pode enviar e-mail</div>
         </div>
       </div>
+      <div class="ex-item"><span class="ex-text">Agende um relatório em pdf de produção dos últimos 7 dias a cada 6 horas<em>PDF gerado automaticamente a cada 6h e salvo nos artefatos</em></span><button class="ex-copy" onclick="_exCopy(this,'Agende um relatório em pdf de produção dos últimos 7 dias a cada 6 horas')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Agenda um relatório diário de produção todo dia às 7h<em>PDF gerado automaticamente e salvo nos artefatos </em></span><button class="ex-copy" onclick="_exCopy(this,'Agenda um relatório diário de produção todo dia às 7h')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Agende um relatório semanal de FPY e defeitos toda segunda às 8h<em>Planilha ou PDF salvo nos artefatos toda semana sem intervenção</em></span><button class="ex-copy" onclick="_exCopy(this,'Agende um relatório semanal de FPY e defeitos toda segunda às 8h')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Crie uma tarefa que roda todo dia 1º do mês com resumo do mês anterior</span><button class="ex-copy" onclick="_exCopy(this,'Crie uma tarefa que roda todo dia 1º do mês com resumo do mês anterior')">↗ copiar</button></div>
@@ -3917,7 +4573,7 @@ document.addEventListener('DOMContentLoaded', _loadDemoState);
           <div class="ex-card-subtitle">Criados como tarefas agendadas · verificação a cada 5 min · notificação no painel de alertas · pode enviar e-mail</div>
         </div>
       </div>
-      <div class="ex-item"><span class="ex-text">Me avise se o OEE cair abaixo de 75%<em>Verifica a cada 5 min e notifica quando o threshold for cruzado</em></span><button class="ex-copy" onclick="_exCopy(this,'Me avise se o OEE cair abaixo de 75%')">↗ copiar</button></div>
+      <div class="ex-item"><span class="ex-text">Me avise se a produção de hoje aumentar acima de 2000<em>Verifica a cada 5 min e notifica quando o threshold for cruzado</em></span><button class="ex-copy" onclick="_exCopy(this,'Me avise se a produção de hoje aumentar acima de 2000')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Crie um monitor que alerte se a produção passar 2000 unidades no dia</span><button class="ex-copy" onclick="_exCopy(this,'Crie um monitor que alerte se a produção passar 2000 unidades no dia')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Me notifique quando a Linha 1 ficar inoperante</span><button class="ex-copy" onclick="_exCopy(this,'Me notifique quando a Linha 1 ficar inoperante')">↗ copiar</button></div>
       <div class="ex-item"><span class="ex-text">Alerta se o FPY cair abaixo de 90% em qualquer linha</span><button class="ex-copy" onclick="_exCopy(this,'Alerta se o FPY cair abaixo de 90% em qualquer linha')">↗ copiar</button></div>
@@ -4025,7 +4681,49 @@ function _exCopy(btn, text) {
   btn.style.borderColor = '#34d399';
   setTimeout(() => { btn.textContent = '↗ copiar'; btn.style.color = ''; btn.style.borderColor = ''; }, 1800);
 }
+
+function _openMermaidModal() {
+  const modal = document.getElementById('mermaid-modal');
+  const content = document.getElementById('mermaid-modal-content');
+  const srcSvg = document.querySelector('#mermaid-graph-wrap .mermaid svg');
+  if (srcSvg) {
+    const clone = srcSvg.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    clone.style.cssText = 'width:100%;height:auto;max-width:none;display:block;';
+    content.innerHTML = '';
+    content.appendChild(clone);
+  }
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function _closeMermaidModal() {
+  document.getElementById('mermaid-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function _closeMermaidModalBackdrop(e) {
+  if (e.target === document.getElementById('mermaid-modal')) _closeMermaidModal();
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && document.getElementById('mermaid-modal').style.display !== 'none') {
+    _closeMermaidModal();
+  }
+});
 </script>
+
+<!-- Modal: Grafo ampliado -->
+<div id="mermaid-modal" style="display:none" class="fixed inset-0 z-[9990] flex items-center justify-center bg-black/85 backdrop-blur-sm" onclick="_closeMermaidModalBackdrop(event)">
+  <div class="relative bg-[#0B0F19] rounded-xl border border-slate-700 shadow-2xl flex flex-col" style="width:95vw;height:92vh;max-width:1800px;">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800 flex-shrink-0">
+      <span class="text-sm font-mono text-slate-400 flex items-center gap-2"><i class="fa-solid fa-diagram-project text-indigo-400"></i> Grafo Multi-Agente (LangGraph)</span>
+      <button onclick="_closeMermaidModal()" class="text-slate-500 hover:text-white transition-colors text-lg px-2" title="Fechar (Esc)"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="mermaid-modal-content" class="flex-1 overflow-auto flex items-start justify-center p-6"></div>
+  </div>
+</div>
 
 </body>
 </html>

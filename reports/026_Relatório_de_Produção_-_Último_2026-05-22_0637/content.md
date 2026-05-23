@@ -1,0 +1,1 @@
+Relatório de Produção gerado para o período de 2026-05-16 a 2026-05-22. Total produzido: 26,371 unidades.

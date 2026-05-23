@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/defects`
+`GET /defects`
 
 Comportamento **muda** conforme o parâmetro `category`:
 
@@ -23,7 +23,7 @@ Comportamento **muda** conforme o parâmetro `category`:
 | from      | string | não         | YYYY-MM-DD                             | Data inicial                                      |
 | to        | string | não         | YYYY-MM-DD                             | Data final                                        |
 | shift     | string | não         | `A`, `B`, `C`                          | Filtra por turno                                  |
-| model     | string | não         | `PhoneX Pro`, `PhoneX Lite`, `PhoneX Ultra`, `PhoneX Mini` | Filtra por modelo (equivalente a filtrar pela linha correspondente) |
+| line      | integer | não        | `1`, `2`, `3`, `4`                                         | Filtra por linha de produção                                        |
 | category  | string | não         | nome exato (ver tabela abaixo)         | Ativa modo série temporal para uma categoria      |
 
 ### Categorias existentes

@@ -1,0 +1,1 @@
+Relatório de OEE gerado para o período de 2026-05-15 a 2026-05-21. Média OEE: 71.3%

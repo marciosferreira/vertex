@@ -74,9 +74,10 @@ def _format_list(tasks: list[dict]) -> str:
     lines = [f"**{len(active)} tarefa(s) agendada(s):**\n"]
     for t in active:
         status_label = {
-            'active': '✅ ativa',
-            'paused': '⏸️ pausada',
-            'error': '❌ erro',
+            'active':  '✅ ativa',
+            'draft':   '⏳ gerando código',
+            'paused':  '⏸️ pausada',
+            'error':   '❌ erro',
             'completed': '✔️ concluída',
         }.get(t.get('status', ''), t.get('status', ''))
         lines.append(f"**[{t['id']}]** {t.get('name', '?')}")
@@ -129,7 +130,7 @@ def schedule_task(
     name: str,
     description: str,
     frequency: str,
-    time: str,
+    time: Optional[str] = None,
     instructions: Optional[str] = None,
     email: Optional[str] = None,
     weekday: Optional[str] = None,
@@ -146,7 +147,8 @@ def schedule_task(
                    "once" | "daily" | "weekly" | "monthly" |
                    "every_Xm" (ex: "every_2m") | "every_Xh" | "every_Xd" |
                    "on_demand" (sem agendamento — executa só quando o usuário clicar ▶ no painel)
-        time: Hora no formato "HH:MM" (ex: "08:00"). Ignorado se frequency="on_demand".
+        time: Hora no formato "HH:MM" (ex: "08:00"). Se omitido, usa a hora
+              atual como ponto de partida. Ignorado se frequency="on_demand".
         instructions: Passo a passo detalhado de execução, incluindo os
                       trechos de código Python validados. Se fornecido, a
                       tarefa fica ativa imediatamente. Se omitido, fica com
@@ -171,7 +173,7 @@ def schedule_task(
             """INSERT INTO scheduled_tasks
                (id, name, description, instructions, frequency, time, weekday,
                 day, email, status, next_run, last_run, created_at, user_id)
-               VALUES (?,?,?,?,?,?,?,?,?,'active',?,NULL,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,'draft',?,NULL,?,?)""",
             (task_id, name, description, instructions, frequency, time,
              weekday, day, email, next_run, now, user_id),
         )
@@ -183,7 +185,7 @@ def schedule_task(
     else:
         schedule_info = f"Próxima execução agendada: {next_run}"
     return (
-        f"Tarefa **[{task_id}]** criada e ativa. {schedule_info}\n\n"
+        f"Tarefa **[{task_id}]** criada (aguardando código). {schedule_info}\n\n"
         + _format_list(tasks)
         + "\nPara remover tarefa redundante: **delete task [ID]**"
     )
@@ -424,12 +426,27 @@ def test_task_code(task_id: str, code: str, from_date: str = "", to_date: str = 
 
     session_id = f"test_{task_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     try:
-        tokens = run_task_code(code, from_date, to_date, session_id)
-        # Empurra preview direto para o chat — não depende do LLM repassar os tokens
+        tokens, ctx = run_task_code(code, from_date, to_date, session_id, user_id=_current_user_id(), is_test=True)
         _push_artifacts("artifact_preview", tokens, task_id)
+
+        alert_lines = []
+        for a in ctx.test_alerts():
+            parts = [f"  🔔 {a['message']}"]
+            if a.get('value') is not None:
+                parts.append(f"valor={a['value']}")
+            if a.get('threshold') is not None:
+                parts.append(f"threshold={a['threshold']}")
+            alert_lines.append(" | ".join(parts))
+
+        alert_section = (
+            "\n\n**Notificações que seriam disparadas:**\n" + "\n".join(alert_lines)
+            if alert_lines else ""
+        )
+
         return (
             f"✅ **Teste bem-sucedido!** Período: {from_date} → {to_date}\n"
             f"Artefatos enviados para o chat: {', '.join(tokens)}"
+            f"{alert_section}"
         )
     except TaskCodeError as e:
         return f"❌ **Erro no código:**\n```\n{e}\n```\nCorreja e teste novamente antes de salvar."
@@ -466,12 +483,12 @@ def save_task_code(task_id: str, code: str) -> str:
             ).fetchone()
             version = ver_row['nxt']
             conn.execute(
-                "INSERT INTO task_code_versions (task_id, version, code, saved_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO task_code_versions (task_id, version, code, created_at) VALUES (?, ?, ?, ?)",
                 (task_id, version, row['task_code'], now),
             )
 
         conn.execute(
-            "UPDATE scheduled_tasks SET task_code = ? WHERE id = ?",
+            "UPDATE scheduled_tasks SET task_code = ?, status = 'active' WHERE id = ?",
             (code, task_id),
         )
         conn.commit()
@@ -502,14 +519,14 @@ def get_task_code_versions(task_id: str) -> str:
     """
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT version, saved_at FROM task_code_versions WHERE task_id = ? ORDER BY version DESC",
+            "SELECT version, created_at FROM task_code_versions WHERE task_id = ? ORDER BY version DESC",
             (task_id,)
         ).fetchall()
     if not rows:
         return f"Tarefa [{task_id}] não possui versões arquivadas."
     lines = [f"**Versões do task_code — Tarefa [{task_id}]:**\n"]
     for r in rows:
-        lines.append(f"  v{r['version']} — salva em {r['saved_at']}")
+        lines.append(f"  v{r['version']} — salva em {r['created_at']}")
     lines.append("\nUse `restore_task_code_version` para restaurar uma versão.")
     return '\n'.join(lines)
 
@@ -548,7 +565,7 @@ def restore_task_code_version(task_id: str, version: int) -> str:
                 (task_id,)
             ).fetchone()['nxt']
             conn.execute(
-                "INSERT INTO task_code_versions (task_id, version, code, saved_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO task_code_versions (task_id, version, code, created_at) VALUES (?, ?, ?, ?)",
                 (task_id, new_ver, task_row['task_code'], now),
             )
 

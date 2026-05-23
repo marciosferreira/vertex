@@ -1,38 +1,38 @@
 ﻿# skill: producao_diaria_vs_meta
-# descricao: Gráfico de produção diária vs meta — barras de produção, linha de meta, filtros por turno, linha e modelo de aparelho.
-# palavras-chave: produção diária, meta, produzido, target, barras, histórico, modelo, phonex, turno, linha
+# descricao: Gráfico de produção diária vs meta — barras de produção, linha de meta, filtros por turno e linha de produção.
+# palavras-chave: produção diária, meta, produzido, target, barras, histórico, phonex, turno, linha
 
 ---
 
 ## Endpoint
 
-`GET http://localhost:8000/production/historical`
+`GET /production/historical`
 
 ---
 
 ## Parâmetros da API
 
-| Parâmetro | Tipo   | Valores aceitos                                              | Descrição                                       |
-|-----------|--------|--------------------------------------------------------------|-------------------------------------------------|
-| from      | string | YYYY-MM-DD                                                   | Data inicial do período                         |
-| to        | string | YYYY-MM-DD                                                   | Data final do período                           |
-| shift     | string | `A`, `B`, `C`                                                | Turno — omitir retorna agregado dos três turnos |
-| model     | string | `PhoneX Pro`, `PhoneX Lite`, `PhoneX Ultra`, `PhoneX Mini`   | Modelo do aparelho — omitir retorna todos       |
+| Parâmetro | Tipo    | Valores aceitos | Descrição                                       |
+|-----------|---------|------------------|-------------------------------------------------|
+| from      | string  | YYYY-MM-DD       | Data inicial do período                         |
+| to        | string  | YYYY-MM-DD       | Data final do período                           |
+| shift     | string  | `A`, `B`, `C`    | Turno — omitir retorna agregado dos três turnos |
+| line      | integer | `1`, `2`, `3`, `4` | Linha de produção — omitir retorna todas      |
 
 **Chave sugerida para chamar_api:** `producao`
 
 ---
 
-## Modelos disponíveis
+## Linhas disponíveis
 
-| Modelo        | Linha de produção |
-|---------------|-------------------|
-| PhoneX Pro    | Linha 1           |
-| PhoneX Lite   | Linha 2           |
-| PhoneX Ultra  | Linha 3           |
-| PhoneX Mini   | Linha 4           |
+| Linha   | Modelo atual (pode mudar) |
+|---------|---------------------------|
+| `line=1` | PhoneX Pro               |
+| `line=2` | PhoneX Lite              |
+| `line=3` | PhoneX Ultra             |
+| `line=4` | PhoneX Mini              |
 
-> Cada linha produz exclusivamente seu modelo. Filtrar por `model` é equivalente a filtrar pela linha correspondente, mas com semântica mais clara para o usuário.
+> O modelo associado a cada linha pode mudar. Use `GET /lines` para descobrir o modelo vigente. Sempre filtre por `line=<número>`, nunca por nome de modelo.
 
 ---
 
@@ -88,35 +88,35 @@ result = fig
 
 ---
 
-## Variante — comparativo entre modelos
+## Variante — comparativo entre linhas
 
-Use quando o usuário quiser comparar a produção de dois ou mais modelos lado a lado. Requer uma chamada por modelo.
+Use quando o usuário quiser comparar a produção de duas ou mais linhas lado a lado. Requer uma chamada por linha.
 
 ```python
-# Pressupõe prod_pro, prod_lite, prod_ultra, prod_mini carregados via chamar_api
-modelos = [
-    (prod_pro,   'PhoneX Pro',   '#60a5fa'),
-    (prod_lite,  'PhoneX Lite',  '#34d399'),
-    (prod_ultra, 'PhoneX Ultra', '#a78bfa'),
-    (prod_mini,  'PhoneX Mini',  '#fbbf24'),
+# Pressupõe linha1, linha2, linha3, linha4 carregados via chamar_api (line=1..4)
+# Use apenas as linhas solicitadas pelo usuário
+linhas = [
+    (linha1, 'Linha 1', '#60a5fa'),
+    (linha2, 'Linha 2', '#34d399'),
+    (linha3, 'Linha 3', '#a78bfa'),
+    (linha4, 'Linha 4', '#fbbf24'),
 ]
-# Use apenas os modelos solicitados pelo usuário
 
-x_ref = pd.to_datetime(prod_pro['date']).dt.strftime('%d/%m')
+x_ref = pd.to_datetime(linha1['date']).dt.strftime('%d/%m')
 n = len(x_ref)
 width = 0.2
 x = range(n)
 
 fig, ax = plt.subplots(figsize=(11, 4))
-for i, (df, nome, cor) in enumerate(modelos):
-    offset = (i - len(modelos) / 2 + 0.5) * width
+for i, (df, nome, cor) in enumerate(linhas):
+    offset = (i - len(linhas) / 2 + 0.5) * width
     ax.bar([xi + offset for xi in x], df['produced'], width=width,
            color=cor, label=nome, alpha=0.9)
 
 step = max(1, n // 10)
 ax.set_xticks(list(x)[::step])
 ax.set_xticklabels(x_ref[::step], rotation=45, ha='right', fontsize=8)
-ax.set_title('Produção Diária por Modelo', color='#1e293b', fontsize=12)
+ax.set_title('Produção Diária por Linha', color='#1e293b', fontsize=12)
 ax.set_ylabel('Unidades', color='#334155')
 ax.set_facecolor('white')
 ax.tick_params(colors='#334155')
@@ -132,12 +132,11 @@ result = fig
 
 | Pedido do usuário                              | Adaptação                                                               |
 |------------------------------------------------|-------------------------------------------------------------------------|
-| "produção do PhoneX Pro"                       | Passe `model=PhoneX Pro` nos params                                     |
-| "produção da linha 1"                          | Equivalente a `model=PhoneX Pro` (Linha 1 = PhoneX Pro)                 |
+| "produção da linha 1" / "produção do PhoneX Pro" | Passe `line=1` nos params (consulte `/lines` para confirmar o modelo) |
 | "quantos dias abaixo da meta"                  | `(producao['produced'] < producao['target']).sum()`                     |
 | "melhor e pior dia"                            | `producao.loc[producao['produced'].idxmax()]` e `idxmin()`              |
-| "comparar dois modelos"                        | Duas chamadas API com `model` diferente + variante comparativo          |
-| "produção do turno A do PhoneX Ultra"          | `shift=A` + `model=PhoneX Ultra` na mesma chamada                      |
+| "comparar duas linhas"                         | Duas chamadas API com `line` diferente + variante comparativo           |
+| "produção do turno A da linha 3"               | `shift=A` + `line=3` na mesma chamada                                   |
 | "% de dias que bateu a meta"                   | `(producao['produced'] >= producao['target']).mean() * 100`             |
 
 ---
@@ -150,10 +149,10 @@ result = fig
 | Dia abaixo da meta    | `#60a5fa`        |
 | Meta                  | `#475569` dashed |
 | Média do período      | `#94a3b8` dotted |
-| PhoneX Pro            | `#60a5fa`        |
-| PhoneX Lite           | `#34d399`        |
-| PhoneX Ultra          | `#a78bfa`        |
-| PhoneX Mini           | `#fbbf24`        |
+| Linha 1               | `#60a5fa`        |
+| Linha 2               | `#34d399`        |
+| Linha 3               | `#a78bfa`        |
+| Linha 4               | `#fbbf24`        |
 | Fundo figure          | `white`        |
 | Fundo eixos           | `white`        |
 | Texto/ticks           | `#334155`        |

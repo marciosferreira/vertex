@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/production/historical`
+`GET /production/historical`
 
 Os defeitos totais já vêm agregados por dia neste endpoint. Para série de uma categoria específica use `/defects?category=<nome>` (ver skill [[defeitos_por_categoria]]).
 

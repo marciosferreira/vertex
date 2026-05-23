@@ -1,0 +1,1 @@
+Relatório de OEE de 2026-05-15 a 2026-05-21 gerado com sucesso.

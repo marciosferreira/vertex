@@ -95,7 +95,6 @@ def save_pdf(session_id: str, pdf_bytes: bytes, filename: str) -> str:
             "INSERT INTO pdfs (pdf_id, session_id, pdf_blob, filename, created_at) VALUES (?, ?, ?, ?, ?)",
             (pdf_id, session_id, pdf_bytes, filename, _now()),
         )
-        _conn.execute("DELETE FROM charts WHERE session_id = ?", (session_id,))
         _conn.commit()
     return pdf_id
 

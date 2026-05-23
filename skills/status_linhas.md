@@ -6,7 +6,7 @@
 
 ## Endpoint
 
-`GET http://localhost:8000/lines/status`
+`GET /lines/status`
 
 Retorna snapshot atual — sem parâmetros de data ou turno.
 
